@@ -33,9 +33,9 @@ class ConfigSwitcher:
         try:
             print("初始化开始...")
             self.root = root
-            self.root.title("cc-config-sync")
-            self.root.geometry("900x520")
-            self.root.minsize(760, 500)
+            self.root.title("ccPivot")
+            self.root.geometry("820x460")
+            self.root.minsize(760, 420)
             self.theme_available = tb is not None
 
             print("初始化变量...")
@@ -78,7 +78,8 @@ class ConfigSwitcher:
                 ["wsl", "sh", "-lc", "echo $HOME"],
                 capture_output=True,
                 text=False,
-                timeout=5
+                timeout=5,
+                creationflags=0x08000000,
             )
             if result.returncode == 0:
                 return self._decode_wsl_text(result.stdout).strip()
@@ -100,6 +101,7 @@ class ConfigSwitcher:
                 capture_output=True,
                 text=False,
                 timeout=5,
+                creationflags=0x08000000,
             )
             if result.returncode != 0:
                 return None
@@ -259,6 +261,7 @@ class ConfigSwitcher:
             capture_output=True,
             text=True,
             encoding='utf-8',
+            creationflags=0x08000000,
         )
         if result.returncode != 0:
             raise Exception(result.stderr.strip() or f"WSL 命令执行失败: {command}")
@@ -365,24 +368,10 @@ class ConfigSwitcher:
     def _delayed_load(self):
         """延迟加载配置，避免阻塞 UI"""
         try:
-            # 禁用下拉栏，防止加载期间操作
-            if hasattr(self, 'codex_provider_combo'):
-                self.codex_provider_combo.config(state='disabled')
-            if hasattr(self, 'claude_profile_combo'):
-                self.claude_profile_combo.config(state='disabled')
-
-            print("加载配置...")
+            self.set_status("加载配置...")
             self.load_configs()
-            print("加载档案...")
+            self.set_status("加载档案...")
             self.load_profiles()
-            print("加载完成")
-
-            # 启用下拉栏
-            if hasattr(self, 'codex_provider_combo'):
-                self.codex_provider_combo.config(state='readonly')
-            if hasattr(self, 'claude_profile_combo'):
-                self.claude_profile_combo.config(state='readonly')
-
             self.set_status("就绪")
         except Exception as e:
             print(f"加载配置失败: {e}")
@@ -405,7 +394,7 @@ class ConfigSwitcher:
         header.grid(row=0, column=0, sticky='ew')
         header.columnconfigure(0, weight=1)
 
-        title = ttk.Label(header, text="cc-config-sync", style='Title.TLabel')
+        title = ttk.Label(header, text="ccPivot", style='Title.TLabel')
         title.grid(row=0, column=0, sticky='w')
         subtitle = ttk.Label(
             header,
@@ -452,6 +441,7 @@ class ConfigSwitcher:
         style.configure('Header.TFrame', background='#f6f8fb')
         style.configure('Status.TFrame', background='#f6f8fb')
         style.configure('Title.TLabel', background='#f6f8fb', foreground='#1f2937', font=(font_family, 18, 'bold'))
+        style.configure('SectionTitle.TLabel', foreground='#334155', font=(font_family, 11, 'bold'))
         style.configure('Muted.TLabel', background='#f6f8fb', foreground='#64748b')
         style.configure('Status.TLabel', background='#f6f8fb', foreground='#475569')
         style.configure('Applied.TLabel', foreground='#047857')
@@ -763,12 +753,12 @@ class ConfigSwitcher:
         if self.codex_selected_provider in self.codex_providers:
             if hasattr(self, 'codex_provider_var'):
                 self.codex_provider_var.set(self.codex_selected_provider)
-            if hasattr(self, 'codex_provider_combo'):
+            if hasattr(self, 'codex_provider_list_frame'):
                 self._load_codex_provider_to_ui(self.codex_selected_provider)
         if self.claude_active_profile in self.claude_profiles:
             if hasattr(self, 'claude_profile_var'):
                 self.claude_profile_var.set(self.claude_active_profile)
-            if hasattr(self, 'claude_profile_combo'):
+            if hasattr(self, 'claude_provider_list_frame'):
                 self._load_claude_profile_to_ui(self.claude_active_profile)
 
         self._update_codex_applied_label()
@@ -797,8 +787,8 @@ class ConfigSwitcher:
 
     def _refresh_profiles_ui(self):
         codex_names = sorted(self.codex_providers.keys())
-        if hasattr(self, 'codex_provider_combo'):
-            self.codex_provider_combo['values'] = codex_names
+        if hasattr(self, 'codex_provider_list_frame'):
+            self._rebuild_codex_provider_list()
         if codex_names and self.codex_selected_provider not in codex_names:
             if self.codex_active_provider in codex_names:
                 self.codex_selected_provider = self.codex_active_provider
@@ -806,8 +796,8 @@ class ConfigSwitcher:
                 self.codex_selected_provider = codex_names[0]
 
         claude_names = sorted(self.claude_profiles.keys())
-        if hasattr(self, 'claude_profile_combo'):
-            self.claude_profile_combo['values'] = claude_names
+        if hasattr(self, 'claude_provider_list_frame'):
+            self._rebuild_claude_provider_list()
         if not self.claude_active_profile and claude_names:
             self.claude_active_profile = claude_names[0]
 
@@ -815,61 +805,78 @@ class ConfigSwitcher:
         self._update_claude_applied_label()
 
     def _update_codex_applied_label(self):
-        """刷新 Codex 当前已应用/当前编辑的提示文本"""
-        if not hasattr(self, 'codex_applied_var'):
+        """刷新 Codex 状态卡片"""
+        if not hasattr(self, 'codex_win_name_lbl'):
             return
 
         windows_name = self._detect_codex_active_provider_windows()
-        windows_text = windows_name or '未应用'
+        if windows_name:
+            self.codex_win_name_lbl.config(text=windows_name, fg='#1e293b')
+            self.codex_win_status_lbl.config(text='已同步', fg='#047857')
+        else:
+            self.codex_win_name_lbl.config(text='—', fg='#94a3b8')
+            self.codex_win_status_lbl.config(text='未应用', fg='#94a3b8')
+
         if not self.wsl_home:
-            wsl_text = '不可用'
+            self.codex_wsl_name_lbl.config(text='—', fg='#94a3b8')
+            self.codex_wsl_status_lbl.config(text='不可用', fg='#94a3b8')
         else:
             wsl_name = self._detect_codex_active_provider_wsl()
-            wsl_text = wsl_name if wsl_name else '未应用'
-
-        text = f'Windows: {windows_text}    WSL: {wsl_text}'
-        if self.codex_selected_provider:
-            text += f'    当前编辑: {self.codex_selected_provider}'
-        self.codex_applied_var.set(text)
+            if wsl_name:
+                self.codex_wsl_name_lbl.config(text=wsl_name, fg='#1e293b')
+                self.codex_wsl_status_lbl.config(text='已同步', fg='#047857')
+            else:
+                self.codex_wsl_name_lbl.config(text='—', fg='#94a3b8')
+                self.codex_wsl_status_lbl.config(text='未应用', fg='#94a3b8')
 
         if windows_name and windows_name in self.codex_providers:
             self.codex_active_provider = windows_name
 
     def _update_claude_applied_label(self):
-        if not hasattr(self, 'claude_applied_var'):
+        """刷新 Claude 状态卡片"""
+        if not hasattr(self, 'claude_win_name_lbl'):
             return
 
         win_result = self._detect_claude_active_profile_windows()
         if win_result is None:
-            windows_text = '未应用'
+            windows_name, windows_ok = None, False
         else:
             matched, has_env = win_result
-            if not has_env:
-                windows_text = '未应用'
-            elif matched:
-                windows_text = matched
-            else:
-                windows_text = '未匹配'
+            windows_name, windows_ok = (matched, True) if matched and has_env else (None, bool(has_env))
+
+        if windows_ok and windows_name:
+            self.claude_win_name_lbl.config(text=windows_name, fg='#1e293b')
+            self.claude_win_status_lbl.config(text='已同步', fg='#047857')
+        elif windows_ok:
+            self.claude_win_name_lbl.config(text='—', fg='#94a3b8')
+            self.claude_win_status_lbl.config(text='未匹配', fg='#94a3b8')
+        else:
+            self.claude_win_name_lbl.config(text='—', fg='#94a3b8')
+            self.claude_win_status_lbl.config(text='未应用', fg='#94a3b8')
 
         if not self.wsl_home:
-            wsl_text = '不可用'
+            self.claude_wsl_name_lbl.config(text='—', fg='#94a3b8')
+            self.claude_wsl_status_lbl.config(text='不可用', fg='#94a3b8')
         else:
             wsl_result = self._detect_claude_active_profile_wsl()
             if wsl_result is None:
-                wsl_text = '未应用'
+                wsl_name, wsl_ok = None, False
             else:
                 matched, has_env = wsl_result
-                if not has_env:
-                    wsl_text = '未应用'
-                elif matched:
-                    wsl_text = matched
-                else:
-                    wsl_text = '未匹配'
+                wsl_name, wsl_ok = (matched, True) if matched and has_env else (None, bool(has_env))
 
-        text = f'Windows: {windows_text}    WSL: {wsl_text}'
-        if self.claude_active_profile:
-            text += f'    当前编辑: {self.claude_active_profile}'
-        self.claude_applied_var.set(text)
+            if wsl_ok and wsl_name:
+                self.claude_wsl_name_lbl.config(text=wsl_name, fg='#1e293b')
+                self.claude_wsl_status_lbl.config(text='已同步', fg='#047857')
+            elif wsl_ok:
+                self.claude_wsl_name_lbl.config(text='—', fg='#94a3b8')
+                self.claude_wsl_status_lbl.config(text='未匹配', fg='#94a3b8')
+            else:
+                self.claude_wsl_name_lbl.config(text='—', fg='#94a3b8')
+                self.claude_wsl_status_lbl.config(text='未应用', fg='#94a3b8')
+
+        if windows_name and windows_name in self.claude_profiles:
+            self.claude_active_profile = windows_name
 
     def _capture_current_codex_provider(self) -> Dict[str, Any]:
         """从 UI 捕获当前 Codex 供应商配置"""
@@ -1115,7 +1122,7 @@ class ConfigSwitcher:
                 self.codex_active_provider = None
 
             self._refresh_profiles_ui()
-            values = list(self.codex_provider_combo['values'])
+            values = sorted(self.codex_providers.keys())
             if values:
                 if self.codex_selected_provider not in self.codex_providers:
                     self.codex_selected_provider = values[0]
@@ -1305,7 +1312,7 @@ class ConfigSwitcher:
             self.claude_active_profile = None
 
         self._refresh_profiles_ui()
-        values = list(self.claude_profile_combo['values'])
+        values = sorted(self.claude_profiles.keys())
         if values:
             self.claude_active_profile = values[0]
             self.claude_profile_var.set(self.claude_active_profile)
@@ -1398,157 +1405,541 @@ class ConfigSwitcher:
             messagebox.showerror('错误', f'应用到 WSL 失败:\n{e}')
 
     def setup_codex_tab(self, parent):
-        """设置 Codex 配置标签页"""
+        """设置 Codex 配置标签页 — 左右分栏布局"""
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
-        content = ttk.Frame(parent, padding=(18, 16, 18, 18))
-        content.grid(row=0, column=0, sticky='nsew')
-        content.columnconfigure(0, weight=1)
+        main_frame = ttk.Frame(parent, padding=(16, 14, 16, 14))
+        main_frame.grid(row=0, column=0, sticky='nsew')
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(0, weight=1)
 
-        provider_frame = ttk.LabelFrame(content, text="Codex 供应商", padding=(16, 12))
-        provider_frame.grid(row=0, column=0, sticky='ew')
-        provider_frame.columnconfigure(1, weight=1)
+        # === 左侧面板 — 供应商列表 ===
+        left_panel = ttk.Frame(main_frame, width=210)
+        left_panel.grid(row=0, column=0, sticky='ns', padx=(0, 16))
+        left_panel.grid_propagate(False)
+        left_panel.columnconfigure(0, weight=1)
+        left_panel.rowconfigure(1, weight=1)
 
-        ttk.Label(provider_frame, text="供应商").grid(row=0, column=0, sticky='w', padx=(0, 10))
-        self.codex_provider_var = tk.StringVar()
-        self.codex_provider_combo = ttk.Combobox(provider_frame, textvariable=self.codex_provider_var, width=24, state="readonly")
-        self.codex_provider_combo.grid(row=0, column=1, sticky='ew')
-        self.codex_provider_combo.bind("<<ComboboxSelected>>", self.on_codex_provider_selected)
+        title_row = ttk.Frame(left_panel)
+        title_row.grid(row=0, column=0, sticky='ew')
+        ttk.Label(title_row, text="供应商", style='SectionTitle.TLabel').pack(side='left')
+        self.codex_provider_count_var = tk.StringVar(value='0 个')
+        ttk.Label(title_row, textvariable=self.codex_provider_count_var, foreground='#94a3b8').pack(side='right')
 
-        actions = ttk.Frame(provider_frame)
-        actions.grid(row=0, column=2, sticky='e', padx=(12, 0))
-        ttk.Button(actions, text="新增", command=self.create_codex_provider).pack(side='left', padx=(0, 6))
-        ttk.Button(actions, text="保存", command=self.save_codex_provider).pack(side='left', padx=(0, 6))
-        ttk.Button(actions, text="删除", command=self.delete_codex_provider, style='Danger.TButton').pack(side='left')
+        # Canvas + Scrollbar 列表容器
+        list_container = ttk.Frame(left_panel)
+        list_container.grid(row=1, column=0, sticky='nsew', pady=(8, 8))
+        list_container.columnconfigure(0, weight=1)
+        list_container.rowconfigure(0, weight=1)
 
-        apply_actions = ttk.Frame(provider_frame)
-        apply_actions.grid(row=1, column=1, columnspan=2, sticky='w', pady=(10, 0))
-        ttk.Button(apply_actions, text="应用到两端", command=self.switch_codex_provider).pack(side='left', padx=(0, 8))
-        ttk.Button(apply_actions, text="仅 Windows", command=self.switch_codex_provider_windows_only).pack(side='left', padx=(0, 8))
-        ttk.Button(apply_actions, text="仅 WSL", command=self.switch_codex_provider_wsl_only).pack(side='left')
+        self.codex_provider_canvas = tk.Canvas(list_container, bg='#ffffff', highlightthickness=1,
+                                               highlightbackground='#d1d5db', width=188)
+        self.codex_provider_canvas.grid(row=0, column=0, sticky='nsew')
 
-        self.codex_applied_var = tk.StringVar(value='当前已应用: 未检测')
-        ttk.Label(provider_frame, textvariable=self.codex_applied_var, style='Applied.TLabel').grid(
-            row=2, column=0, columnspan=3, sticky='w', pady=(10, 0)
-        )
+        codex_scrollbar = ttk.Scrollbar(list_container, orient='vertical',
+                                        command=self.codex_provider_canvas.yview)
+        codex_scrollbar.grid(row=0, column=1, sticky='ns')
+        self.codex_provider_canvas.configure(yscrollcommand=codex_scrollbar.set)
+        self._codex_scrollbar = codex_scrollbar
 
-        # 配置表单
-        form_frame = ttk.LabelFrame(content, text="连接配置", padding=(16, 14))
-        form_frame.grid(row=1, column=0, sticky='ew', pady=(14, 0))
+        self.codex_provider_list_frame = tk.Frame(self.codex_provider_canvas, bg='#ffffff')
+        self._codex_canvas_window = self.codex_provider_canvas.create_window(
+            (0, 0), window=self.codex_provider_list_frame, anchor='nw')
 
-        ttk.Label(form_frame, text="Base URL").grid(row=0, column=0, sticky='w', pady=9, padx=(0, 14))
-        self.codex_baseurl = ttk.Entry(form_frame, width=48)
-        self.codex_baseurl.grid(row=0, column=1, sticky='we', pady=9)
+        def _update_codex_scroll_vis():
+            try:
+                fh = self.codex_provider_list_frame.winfo_height()
+                ch = self.codex_provider_canvas.winfo_height()
+                if fh <= ch:
+                    self._codex_scrollbar.grid_remove()
+                    self.codex_provider_canvas.yview_moveto(0)
+                else:
+                    self._codex_scrollbar.grid()
+            except Exception:
+                pass
 
-        ttk.Label(form_frame, text="Model").grid(row=1, column=0, sticky='w', pady=9, padx=(0, 14))
-        self.codex_model = ttk.Entry(form_frame, width=48)
-        self.codex_model.grid(row=1, column=1, sticky='we', pady=9)
+        def _on_codex_list_configure(event):
+            self.codex_provider_canvas.configure(
+                scrollregion=(0, 0, event.width, event.height))
+            self.root.after_idle(_update_codex_scroll_vis)
 
-        ttk.Label(form_frame, text="API Key").grid(row=2, column=0, sticky='w', pady=9, padx=(0, 14))
-        self.codex_apikey = ttk.Entry(form_frame, width=48, show="*")
-        self.codex_apikey.grid(row=2, column=1, sticky='we', pady=9)
+        def _on_codex_canvas_configure(event):
+            self.codex_provider_canvas.itemconfig(self._codex_canvas_window, width=event.width)
+            self.root.after_idle(_update_codex_scroll_vis)
+
+        self.codex_provider_list_frame.bind('<Configure>', _on_codex_list_configure)
+        self.codex_provider_canvas.bind('<Configure>', _on_codex_canvas_configure)
+
+        def _on_codex_mousewheel(event):
+            self.codex_provider_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+
+        def _bind_codex_wheel(_e):
+            self.codex_provider_canvas.bind_all('<MouseWheel>', _on_codex_mousewheel)
+
+        def _unbind_codex_wheel(_e):
+            self.codex_provider_canvas.unbind_all('<MouseWheel>')
+
+        self.codex_provider_canvas.bind('<Enter>', _bind_codex_wheel)
+        self.codex_provider_canvas.bind('<Leave>', _unbind_codex_wheel)
+
+        self.codex_list_items = {}
+
+        btn_row = ttk.Frame(left_panel)
+        btn_row.grid(row=2, column=0, sticky='ew')
+        ttk.Button(btn_row, text="＋ 新增", command=self.create_codex_provider).pack(side='left', fill='x', expand=True, padx=(0, 4))
+        ttk.Button(btn_row, text="删除", command=self.delete_codex_provider, style='Danger.TButton').pack(side='left', fill='x', expand=True, padx=(4, 0))
+
+        # === 右侧面板 ===
+        right_panel = ttk.Frame(main_frame)
+        right_panel.grid(row=0, column=1, sticky='nsew')
+        right_panel.columnconfigure(0, weight=1)
+
+        # 连接配置区
+        form_frame = ttk.LabelFrame(right_panel, text="连接配置", padding=(14, 12))
+        form_frame.pack(fill='x')
+        form_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(form_frame, text="Base URL").grid(row=0, column=0, sticky='w', pady=7, padx=(0, 14))
+        self.codex_baseurl = ttk.Entry(form_frame)
+        self.codex_baseurl.grid(row=0, column=1, sticky='we', pady=7)
+
+        ttk.Label(form_frame, text="Model").grid(row=1, column=0, sticky='w', pady=7, padx=(0, 14))
+        self.codex_model = ttk.Entry(form_frame)
+        self.codex_model.grid(row=1, column=1, sticky='we', pady=7)
+
+        ttk.Label(form_frame, text="API Key").grid(row=2, column=0, sticky='w', pady=7, padx=(0, 14))
+        self.codex_apikey = ttk.Entry(form_frame, show="*")
+        self.codex_apikey.grid(row=2, column=1, sticky='we', pady=7)
 
         show_key_var = tk.BooleanVar(value=False)
 
         def toggle_key():
             self.codex_apikey.config(show="" if show_key_var.get() else "*")
 
-        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(row=2, column=2, sticky='w', padx=(12, 0))
+        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(
+            row=2, column=2, sticky='w', padx=(12, 0))
 
-        form_frame.columnconfigure(1, weight=1)
+        form_actions = ttk.Frame(form_frame)
+        form_actions.grid(row=3, column=0, columnspan=3, sticky='w', pady=(12, 0))
 
-        # 帮助按钮
         def show_codex_help():
             help_text = """配置项说明：
-• Base URL - 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.base_url
-• Model - 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.model
-• API Key - 保存到工具内部供应商列表；"应用到"后才写入 ~/.codex/auth.json
+• Base URL — 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.base_url
+• Model — 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.model
+• API Key — 保存到工具内部供应商列表；"同步"后才写入 ~/.codex/auth.json
 
-"应用到 → 两端"：先保存当前输入，再以固定运行别名改写 config.toml / auth.json，同步到 WSL
-"应用到 → 仅 Windows"：只修改 Windows 侧，不动 WSL
-"应用到 → 仅 WSL"：只修改 WSL 侧，不动 Windows
+"两端同步"：先保存当前输入，再以固定运行别名改写 config.toml / auth.json，同步到 WSL
+"仅 Windows"：只修改 Windows 侧，不动 WSL
+"仅 WSL"：只修改 WSL 侧，不动 Windows
 新建供应商默认包含 wire_api="responses" 与 requires_openai_auth=true。"""
             messagebox.showinfo("Codex 帮助", help_text)
 
-        ttk.Button(actions, text="?", width=3, command=show_codex_help).pack(side='left', padx=(8, 0))
+        ttk.Button(form_actions, text="? 帮助", width=7, command=show_codex_help).pack(side='left', padx=(0, 8))
+        ttk.Button(form_actions, text="保存", command=self.save_codex_provider).pack(side='left')
+
+        ttk.Separator(right_panel, orient='horizontal').pack(fill='x', pady=(14, 14))
+
+        # 同步操作区
+        sync_frame = ttk.LabelFrame(right_panel, text="同步到配置文件", padding=(14, 12))
+        sync_frame.pack(fill='x')
+
+        sync_buttons = ttk.Frame(sync_frame)
+        sync_buttons.pack(fill='x')
+        ttk.Button(sync_buttons, text="两端同步", command=self.switch_codex_provider).pack(side='left', fill='x', expand=True, padx=(0, 4))
+        ttk.Button(sync_buttons, text="仅 Windows", command=self.switch_codex_provider_windows_only).pack(side='left', fill='x', expand=True, padx=(4, 4))
+        ttk.Button(sync_buttons, text="仅 WSL", command=self.switch_codex_provider_wsl_only).pack(side='left', fill='x', expand=True, padx=(4, 0))
+
+        # 状态卡片
+        font_family = 'Microsoft YaHei UI'
+        status_container = tk.Frame(sync_frame, bg='#f8fafc')
+        status_container.pack(fill='x', pady=(10, 0))
+
+        win_card = tk.Frame(status_container, bg='#ffffff', highlightthickness=1, highlightbackground='#e2e8f0')
+        win_card.pack(side='left', fill='x', expand=True, padx=(0, 4))
+        tk.Label(win_card, text='Windows', bg='#f8fafc', fg='#64748b',
+                 font=(font_family, 9)).pack(fill='x', padx=10, pady=(6, 0))
+        self.codex_win_name_lbl = tk.Label(win_card, text='—', bg='#ffffff', fg='#94a3b8',
+                                           font=(font_family, 12, 'bold'))
+        self.codex_win_name_lbl.pack(padx=10, pady=(2, 0))
+        self.codex_win_status_lbl = tk.Label(win_card, text='未应用', bg='#ffffff', fg='#94a3b8',
+                                             font=(font_family, 9))
+        self.codex_win_status_lbl.pack(padx=10, pady=(0, 6))
+
+        wsl_card = tk.Frame(status_container, bg='#ffffff', highlightthickness=1, highlightbackground='#e2e8f0')
+        wsl_card.pack(side='left', fill='x', expand=True, padx=(4, 0))
+        tk.Label(wsl_card, text='WSL', bg='#f8fafc', fg='#64748b',
+                 font=(font_family, 9)).pack(fill='x', padx=10, pady=(6, 0))
+        self.codex_wsl_name_lbl = tk.Label(wsl_card, text='—', bg='#ffffff', fg='#94a3b8',
+                                           font=(font_family, 12, 'bold'))
+        self.codex_wsl_name_lbl.pack(padx=10, pady=(2, 0))
+        self.codex_wsl_status_lbl = tk.Label(wsl_card, text='未应用', bg='#ffffff', fg='#94a3b8',
+                                             font=(font_family, 9))
+        self.codex_wsl_status_lbl.pack(padx=10, pady=(0, 6))
+
+        self.codex_provider_var = tk.StringVar()
+
+    def _rebuild_codex_provider_list(self):
+        """重建 Codex 供应商左侧列表（结构变化时调用）"""
+        for widget in self.codex_provider_list_frame.winfo_children():
+            widget.destroy()
+        self.codex_list_items.clear()
+
+        names = sorted(self.codex_providers.keys())
+        self.codex_provider_count_var.set(f'{len(names)} 个')
+
+        if not names:
+            tk.Label(self.codex_provider_list_frame, text='(空)', bg='#ffffff', fg='#94a3b8',
+                     font=('Microsoft YaHei UI', 10)).pack(pady=24)
+            return
+
+        font_family = 'Microsoft YaHei UI'
+
+        for name in names:
+            if self._is_codex_runtime_provider_alias(name):
+                continue
+
+            is_selected = (name == self.codex_selected_provider)
+            is_applied = (name in self.codex_providers
+                          and name == self.codex_active_provider)
+            bg = '#e0f2fe' if is_selected else '#ffffff'
+
+            row = tk.Frame(self.codex_provider_list_frame, bg=bg, cursor='hand2')
+            row.pack(fill='x')
+
+            inner = tk.Frame(row, bg=bg)
+            inner.pack(fill='x', padx=12, pady=7)
+
+            name_lbl = tk.Label(inner, text=name, bg=bg, anchor='w',
+                                fg='#0369a1' if is_selected else '#1e293b',
+                                font=(font_family, 10, 'bold' if is_selected else 'normal'))
+            name_lbl.pack(side='left')
+
+            arrow_lbl = tk.Label(inner, text='▶', bg=bg, fg='#0369a1',
+                                 font=(font_family, 8))
+            applied_lbl = tk.Label(inner, text='已应用', bg='#dcfce7', fg='#047857',
+                                   font=(font_family, 8))
+
+            if is_selected:
+                arrow_lbl.pack(side='right', padx=(4, 0))
+            if is_applied:
+                applied_lbl.pack(side='right', padx=(4, 0))
+
+            # separator
+            if not is_selected:
+                tk.Frame(self.codex_provider_list_frame, bg='#f1f5f9', height=1).pack(fill='x')
+
+            for w in (row, inner, name_lbl):
+                w.bind('<Button-1>', lambda _e, n=name: self._on_codex_list_item_click(n))
+
+            self.codex_list_items[name] = {
+                'row': row, 'inner': inner, 'name_lbl': name_lbl,
+                'arrow_lbl': arrow_lbl, 'applied_lbl': applied_lbl,
+            }
+
+    def _highlight_codex_provider_list(self):
+        """仅更新列表项高亮状态，不重建 widget"""
+        for name, w in self.codex_list_items.items():
+            is_selected = (name == self.codex_selected_provider)
+            is_applied = (name in self.codex_providers
+                          and name == self.codex_active_provider)
+            bg = '#e0f2fe' if is_selected else '#ffffff'
+
+            w['row'].configure(bg=bg)
+            w['inner'].configure(bg=bg)
+            w['name_lbl'].configure(bg=bg, fg='#0369a1' if is_selected else '#1e293b',
+                                    font=('Microsoft YaHei UI', 10,
+                                          'bold' if is_selected else 'normal'))
+            w['arrow_lbl'].configure(bg=bg)
+
+            if is_selected:
+                w['arrow_lbl'].pack(side='right', padx=(4, 0))
+            else:
+                w['arrow_lbl'].pack_forget()
+
+            if is_applied:
+                w['applied_lbl'].pack(side='right', padx=(4, 0))
+            else:
+                w['applied_lbl'].pack_forget()
+
+    def _on_codex_list_item_click(self, name: str):
+        """点击左侧列表项切换到对应供应商"""
+        if name not in self.codex_providers:
+            return
+        self.codex_provider_var.set(name)
+        self.codex_selected_provider = name
+        self._load_codex_provider_to_ui(name)
+        self._update_codex_applied_label()
+        self._highlight_codex_provider_list()
+        try:
+            self._persist_profiles()
+        except Exception as e:
+            self.set_status(f'保存供应商状态失败: {e}', 'error')
 
     def setup_claude_tab(self, parent):
-        """设置 Claude 配置标签页"""
+        """设置 Claude 配置标签页 — 左右分栏布局"""
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
-        content = ttk.Frame(parent, padding=(18, 16, 18, 18))
-        content.grid(row=0, column=0, sticky='nsew')
-        content.columnconfigure(0, weight=1)
+        main_frame = ttk.Frame(parent, padding=(16, 14, 16, 14))
+        main_frame.grid(row=0, column=0, sticky='nsew')
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(0, weight=1)
 
-        provider_frame = ttk.LabelFrame(content, text="Claude 供应商", padding=(16, 12))
-        provider_frame.grid(row=0, column=0, sticky='ew')
-        provider_frame.columnconfigure(1, weight=1)
+        # === 左侧面板 — 供应商列表 ===
+        left_panel = ttk.Frame(main_frame, width=210)
+        left_panel.grid(row=0, column=0, sticky='ns', padx=(0, 16))
+        left_panel.grid_propagate(False)
+        left_panel.columnconfigure(0, weight=1)
+        left_panel.rowconfigure(1, weight=1)
 
-        ttk.Label(provider_frame, text="供应商").grid(row=0, column=0, sticky='w', padx=(0, 10))
-        self.claude_profile_var = tk.StringVar()
-        self.claude_profile_combo = ttk.Combobox(provider_frame, textvariable=self.claude_profile_var, width=24, state="readonly")
-        self.claude_profile_combo.grid(row=0, column=1, sticky='ew')
-        self.claude_profile_combo.bind("<<ComboboxSelected>>", self.on_claude_profile_selected)
+        title_row = ttk.Frame(left_panel)
+        title_row.grid(row=0, column=0, sticky='ew')
+        ttk.Label(title_row, text="供应商", style='SectionTitle.TLabel').pack(side='left')
+        self.claude_provider_count_var = tk.StringVar(value='0 个')
+        ttk.Label(title_row, textvariable=self.claude_provider_count_var, foreground='#94a3b8').pack(side='right')
 
-        actions = ttk.Frame(provider_frame)
-        actions.grid(row=0, column=2, sticky='e', padx=(12, 0))
-        ttk.Button(actions, text="新增", command=self.create_claude_profile).pack(side='left', padx=(0, 6))
-        ttk.Button(actions, text="保存", command=self.save_claude_profile).pack(side='left', padx=(0, 6))
-        ttk.Button(actions, text="删除", command=self.delete_claude_profile, style='Danger.TButton').pack(side='left')
+        # Canvas + Scrollbar 列表容器
+        list_container = ttk.Frame(left_panel)
+        list_container.grid(row=1, column=0, sticky='nsew', pady=(8, 8))
+        list_container.columnconfigure(0, weight=1)
+        list_container.rowconfigure(0, weight=1)
 
-        apply_actions = ttk.Frame(provider_frame)
-        apply_actions.grid(row=1, column=1, columnspan=2, sticky='w', pady=(10, 0))
-        ttk.Button(apply_actions, text="应用到两端", command=self.apply_claude_profile).pack(side='left', padx=(0, 8))
-        ttk.Button(apply_actions, text="仅 Windows", command=self.apply_claude_profile_windows_only).pack(side='left', padx=(0, 8))
-        ttk.Button(apply_actions, text="仅 WSL", command=self.apply_claude_profile_wsl_only).pack(side='left')
+        self.claude_provider_canvas = tk.Canvas(list_container, bg='#ffffff', highlightthickness=1,
+                                                 highlightbackground='#d1d5db', width=188)
+        self.claude_provider_canvas.grid(row=0, column=0, sticky='nsew')
 
-        self.claude_applied_var = tk.StringVar(value='当前已应用: 未检测')
-        ttk.Label(provider_frame, textvariable=self.claude_applied_var, style='Applied.TLabel').grid(
-            row=2, column=0, columnspan=3, sticky='w', pady=(10, 0)
-        )
+        claude_scrollbar = ttk.Scrollbar(list_container, orient='vertical',
+                                         command=self.claude_provider_canvas.yview)
+        claude_scrollbar.grid(row=0, column=1, sticky='ns')
+        self.claude_provider_canvas.configure(yscrollcommand=claude_scrollbar.set)
+        self._claude_scrollbar = claude_scrollbar
 
-        # 配置表单
-        form_frame = ttk.LabelFrame(content, text="连接配置", padding=(16, 14))
-        form_frame.grid(row=1, column=0, sticky='ew', pady=(14, 0))
+        self.claude_provider_list_frame = tk.Frame(self.claude_provider_canvas, bg='#ffffff')
+        self._claude_canvas_window = self.claude_provider_canvas.create_window(
+            (0, 0), window=self.claude_provider_list_frame, anchor='nw')
 
-        # Base URL
-        ttk.Label(form_frame, text="Base URL").grid(row=0, column=0, sticky='w', pady=9, padx=(0, 14))
-        self.claude_baseurl = ttk.Entry(form_frame, width=48)
-        self.claude_baseurl.grid(row=0, column=1, sticky='we', pady=9)
+        def _update_claude_scroll_vis():
+            try:
+                fh = self.claude_provider_list_frame.winfo_height()
+                ch = self.claude_provider_canvas.winfo_height()
+                if fh <= ch:
+                    self._claude_scrollbar.grid_remove()
+                    self.claude_provider_canvas.yview_moveto(0)
+                else:
+                    self._claude_scrollbar.grid()
+            except Exception:
+                pass
 
-        # Model
-        ttk.Label(form_frame, text="Model").grid(row=1, column=0, sticky='w', pady=9, padx=(0, 14))
-        self.claude_model = ttk.Entry(form_frame, width=48)
-        self.claude_model.grid(row=1, column=1, sticky='we', pady=9)
+        def _on_claude_list_configure(event):
+            self.claude_provider_canvas.configure(
+                scrollregion=(0, 0, event.width, event.height))
+            self.root.after_idle(_update_claude_scroll_vis)
 
-        # API Key
-        ttk.Label(form_frame, text="API Key").grid(row=2, column=0, sticky='w', pady=9, padx=(0, 14))
-        self.claude_apikey = ttk.Entry(form_frame, width=48, show="*")
-        self.claude_apikey.grid(row=2, column=1, sticky='we', pady=9)
+        def _on_claude_canvas_configure(event):
+            self.claude_provider_canvas.itemconfig(self._claude_canvas_window, width=event.width)
+            self.root.after_idle(_update_claude_scroll_vis)
+
+        self.claude_provider_list_frame.bind('<Configure>', _on_claude_list_configure)
+        self.claude_provider_canvas.bind('<Configure>', _on_claude_canvas_configure)
+
+        def _on_claude_mousewheel(event):
+            self.claude_provider_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+
+        def _bind_claude_wheel(_e):
+            self.claude_provider_canvas.bind_all('<MouseWheel>', _on_claude_mousewheel)
+
+        def _unbind_claude_wheel(_e):
+            self.claude_provider_canvas.unbind_all('<MouseWheel>')
+
+        self.claude_provider_canvas.bind('<Enter>', _bind_claude_wheel)
+        self.claude_provider_canvas.bind('<Leave>', _unbind_claude_wheel)
+
+        self.claude_list_items = {}
+
+        btn_row = ttk.Frame(left_panel)
+        btn_row.grid(row=2, column=0, sticky='ew')
+        ttk.Button(btn_row, text="＋ 新增", command=self.create_claude_profile).pack(side='left', fill='x', expand=True, padx=(0, 4))
+        ttk.Button(btn_row, text="删除", command=self.delete_claude_profile, style='Danger.TButton').pack(side='left', fill='x', expand=True, padx=(4, 0))
+
+        # === 右侧面板 ===
+        right_panel = ttk.Frame(main_frame)
+        right_panel.grid(row=0, column=1, sticky='nsew')
+        right_panel.columnconfigure(0, weight=1)
+
+        # 连接配置区
+        form_frame = ttk.LabelFrame(right_panel, text="连接配置", padding=(14, 12))
+        form_frame.pack(fill='x')
+        form_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(form_frame, text="Base URL").grid(row=0, column=0, sticky='w', pady=7, padx=(0, 14))
+        self.claude_baseurl = ttk.Entry(form_frame)
+        self.claude_baseurl.grid(row=0, column=1, sticky='we', pady=7)
+
+        ttk.Label(form_frame, text="Model").grid(row=1, column=0, sticky='w', pady=7, padx=(0, 14))
+        self.claude_model = ttk.Entry(form_frame)
+        self.claude_model.grid(row=1, column=1, sticky='we', pady=7)
+
+        ttk.Label(form_frame, text="API Key").grid(row=2, column=0, sticky='w', pady=7, padx=(0, 14))
+        self.claude_apikey = ttk.Entry(form_frame, show="*")
+        self.claude_apikey.grid(row=2, column=1, sticky='we', pady=7)
 
         show_key_var = tk.BooleanVar(value=False)
 
         def toggle_key():
             self.claude_apikey.config(show="" if show_key_var.get() else "*")
 
-        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(row=2, column=2, sticky='w', padx=(12, 0))
-        form_frame.columnconfigure(1, weight=1)
+        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(
+            row=2, column=2, sticky='w', padx=(12, 0))
 
-        # 帮助按钮
+        form_actions = ttk.Frame(form_frame)
+        form_actions.grid(row=3, column=0, columnspan=3, sticky='w', pady=(12, 0))
+
         def show_claude_help():
             help_text = """配置方式：通过 ~/.claude/settings.json 文件配置 Claude
 
 配置项说明：
-• API Key - 存储在 env.ANTHROPIC_AUTH_TOKEN
-• Base URL - 存储在 env.ANTHROPIC_BASE_URL（可选）
-• Model - 存储在 env.ANTHROPIC_MODEL（可选）
+• API Key — 存储在 env.ANTHROPIC_AUTH_TOKEN
+• Base URL — 存储在 env.ANTHROPIC_BASE_URL（可选）
+• Model — 存储在 env.ANTHROPIC_MODEL（可选）
 
-"应用到 → 两端"：先保存当前输入，再写入 settings.json，同步到 WSL
-"应用到 → 仅 Windows"：只修改 Windows 侧，不动 WSL
-"应用到 → 仅 WSL"：只修改 WSL 侧，不动 Windows"""
+"两端同步"：先保存当前输入，再写入 settings.json，同步到 WSL
+"仅 Windows"：只修改 Windows 侧，不动 WSL
+"仅 WSL"：只修改 WSL 侧，不动 Windows"""
             messagebox.showinfo("Claude 帮助", help_text)
 
-        ttk.Button(actions, text="?", width=3, command=show_claude_help).pack(side='left', padx=(8, 0))
+        ttk.Button(form_actions, text="? 帮助", width=7, command=show_claude_help).pack(side='left', padx=(0, 8))
+        ttk.Button(form_actions, text="保存", command=self.save_claude_profile).pack(side='left')
+
+        ttk.Separator(right_panel, orient='horizontal').pack(fill='x', pady=(14, 14))
+
+        # 同步操作区
+        sync_frame = ttk.LabelFrame(right_panel, text="同步到配置文件", padding=(14, 12))
+        sync_frame.pack(fill='x')
+
+        sync_buttons = ttk.Frame(sync_frame)
+        sync_buttons.pack(fill='x')
+        ttk.Button(sync_buttons, text="两端同步", command=self.apply_claude_profile).pack(side='left', fill='x', expand=True, padx=(0, 4))
+        ttk.Button(sync_buttons, text="仅 Windows", command=self.apply_claude_profile_windows_only).pack(side='left', fill='x', expand=True, padx=(4, 4))
+        ttk.Button(sync_buttons, text="仅 WSL", command=self.apply_claude_profile_wsl_only).pack(side='left', fill='x', expand=True, padx=(4, 0))
+
+        # 状态卡片
+        font_family = 'Microsoft YaHei UI'
+        status_container = tk.Frame(sync_frame, bg='#f8fafc')
+        status_container.pack(fill='x', pady=(10, 0))
+
+        win_card = tk.Frame(status_container, bg='#ffffff', highlightthickness=1, highlightbackground='#e2e8f0')
+        win_card.pack(side='left', fill='x', expand=True, padx=(0, 4))
+        tk.Label(win_card, text='Windows', bg='#f8fafc', fg='#64748b',
+                 font=(font_family, 9)).pack(fill='x', padx=10, pady=(6, 0))
+        self.claude_win_name_lbl = tk.Label(win_card, text='—', bg='#ffffff', fg='#94a3b8',
+                                            font=(font_family, 12, 'bold'))
+        self.claude_win_name_lbl.pack(padx=10, pady=(2, 0))
+        self.claude_win_status_lbl = tk.Label(win_card, text='未应用', bg='#ffffff', fg='#94a3b8',
+                                              font=(font_family, 9))
+        self.claude_win_status_lbl.pack(padx=10, pady=(0, 6))
+
+        wsl_card = tk.Frame(status_container, bg='#ffffff', highlightthickness=1, highlightbackground='#e2e8f0')
+        wsl_card.pack(side='left', fill='x', expand=True, padx=(4, 0))
+        tk.Label(wsl_card, text='WSL', bg='#f8fafc', fg='#64748b',
+                 font=(font_family, 9)).pack(fill='x', padx=10, pady=(6, 0))
+        self.claude_wsl_name_lbl = tk.Label(wsl_card, text='—', bg='#ffffff', fg='#94a3b8',
+                                            font=(font_family, 12, 'bold'))
+        self.claude_wsl_name_lbl.pack(padx=10, pady=(2, 0))
+        self.claude_wsl_status_lbl = tk.Label(wsl_card, text='未应用', bg='#ffffff', fg='#94a3b8',
+                                              font=(font_family, 9))
+        self.claude_wsl_status_lbl.pack(padx=10, pady=(0, 6))
+
+        self.claude_profile_var = tk.StringVar()
+
+    def _rebuild_claude_provider_list(self):
+        """重建 Claude 供应商左侧列表（结构变化时调用）"""
+        for widget in self.claude_provider_list_frame.winfo_children():
+            widget.destroy()
+        self.claude_list_items.clear()
+
+        names = sorted(self.claude_profiles.keys())
+        self.claude_provider_count_var.set(f'{len(names)} 个')
+
+        if not names:
+            tk.Label(self.claude_provider_list_frame, text='(空)', bg='#ffffff', fg='#94a3b8',
+                     font=('Microsoft YaHei UI', 10)).pack(pady=24)
+            return
+
+        font_family = 'Microsoft YaHei UI'
+
+        for name in names:
+            is_selected = (name == self.claude_active_profile)
+            is_applied = (name == self.claude_active_profile)
+            bg = '#e0f2fe' if is_selected else '#ffffff'
+
+            row = tk.Frame(self.claude_provider_list_frame, bg=bg, cursor='hand2')
+            row.pack(fill='x')
+
+            inner = tk.Frame(row, bg=bg)
+            inner.pack(fill='x', padx=12, pady=7)
+
+            name_lbl = tk.Label(inner, text=name, bg=bg, anchor='w',
+                                fg='#0369a1' if is_selected else '#1e293b',
+                                font=(font_family, 10, 'bold' if is_selected else 'normal'))
+            name_lbl.pack(side='left')
+
+            arrow_lbl = tk.Label(inner, text='▶', bg=bg, fg='#0369a1',
+                                 font=(font_family, 8))
+            applied_lbl = tk.Label(inner, text='已应用', bg='#dcfce7', fg='#047857',
+                                   font=(font_family, 8))
+
+            if is_selected:
+                arrow_lbl.pack(side='right', padx=(4, 0))
+            if is_applied:
+                applied_lbl.pack(side='right', padx=(4, 0))
+
+            if not is_selected:
+                tk.Frame(self.claude_provider_list_frame, bg='#f1f5f9', height=1).pack(fill='x')
+
+            for w in (row, inner, name_lbl):
+                w.bind('<Button-1>', lambda _e, n=name: self._on_claude_list_item_click(n))
+
+            self.claude_list_items[name] = {
+                'row': row, 'inner': inner, 'name_lbl': name_lbl,
+                'arrow_lbl': arrow_lbl, 'applied_lbl': applied_lbl,
+            }
+
+    def _highlight_claude_provider_list(self):
+        """仅更新列表项高亮状态，不重建 widget"""
+        for name, w in self.claude_list_items.items():
+            is_selected = (name == self.claude_active_profile)
+            is_applied = (name == self.claude_active_profile)
+            bg = '#e0f2fe' if is_selected else '#ffffff'
+
+            w['row'].configure(bg=bg)
+            w['inner'].configure(bg=bg)
+            w['name_lbl'].configure(bg=bg, fg='#0369a1' if is_selected else '#1e293b',
+                                    font=('Microsoft YaHei UI', 10,
+                                          'bold' if is_selected else 'normal'))
+            w['arrow_lbl'].configure(bg=bg)
+
+            if is_selected:
+                w['arrow_lbl'].pack(side='right', padx=(4, 0))
+            else:
+                w['arrow_lbl'].pack_forget()
+
+            if is_applied:
+                w['applied_lbl'].pack(side='right', padx=(4, 0))
+            else:
+                w['applied_lbl'].pack_forget()
+
+    def _on_claude_list_item_click(self, name: str):
+        """点击左侧列表项切换到对应 Claude 供应商"""
+        if name not in self.claude_profiles:
+            return
+        self.claude_profile_var.set(name)
+        self.claude_active_profile = name
+        self._load_claude_profile_to_ui(name)
+        self._update_claude_applied_label()
+        self._highlight_claude_provider_list()
+        try:
+            self._persist_profiles()
+        except Exception as e:
+            self.set_status(f'保存供应商状态失败: {e}', 'error')
 
     def load_configs(self):
         """加载所有配置文件"""
@@ -1708,7 +2099,7 @@ class ConfigSwitcher:
         try:
             # 创建 WSL 侧的 .claude 目录
             wsl_claude_dir = f"{self.wsl_home}/.claude"
-            subprocess.run(['wsl', 'mkdir', '-p', wsl_claude_dir], capture_output=True)
+            subprocess.run(['wsl', 'mkdir', '-p', wsl_claude_dir], capture_output=True, creationflags=0x08000000)
             wsl_target = f"{wsl_claude_dir}/settings.json"
             wsl_data = self._read_wsl_json(wsl_target)
             merged_data = self._merge_claude_env_into_settings(
@@ -1739,10 +2130,10 @@ class ConfigSwitcher:
                 wsl_win_path = f"/mnt/{win_path_str[0].lower()}/{win_path_str[3:]}"
 
                 # WSL 侧也创建 .codex 目录
-                subprocess.run(['wsl', 'mkdir', '-p', wsl_codex_dir], capture_output=True)
+                subprocess.run(['wsl', 'mkdir', '-p', wsl_codex_dir], capture_output=True, creationflags=0x08000000)
 
                 cmd = f'wsl cp "{wsl_win_path}" "{wsl_target}"'
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000)
 
                 if result.returncode != 0:
                     raise Exception(f"同步失败: {result.stderr}")

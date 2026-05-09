@@ -1,34 +1,129 @@
-﻿# cc-config-sync
+# ccPivot
 
-`cc-config-sync` 是一个 Windows GUI 工具，用于统一管理 Codex / Claude 的多套供应商配置，并可自动同步到 WSL。
+轻量级 AI Agent 自定义供应商管理工具 — 更优雅、更简洁地管理 Codex 与 Claude 的多套供应商配置。
 
-## 快速开始
-1. 安装依赖（首次）
-   - 运行 `install_dependencies.bat`
-   - 或手动执行 `pip install toml`
-2. 启动程序
-   - 双击 `启动.bat`
-   - 或执行 `python config_switcher.py`
+![ccPivot 界面截图](docs/screenshot.png)
 
-## 主要能力
-- Codex 与 Claude 分页管理，布局和操作方式一致
-- 每页支持：`新增` / `保存` / `删除` / `应用该供应商`
-- 保存前自动备份原配置（`.backup`）
-- 自动同步配置到 WSL（如可用）
+## 定位
 
-## 配置文件
-- Windows
-  - `%USERPROFILE%\\.codex\\config.toml`
-  - `%USERPROFILE%\\.codex\\auth.json`
-  - `%USERPROFILE%\\.claude\\settings.json`
-  - `%USERPROFILE%\\.config_switcher\\providers.json`
-- WSL（自动检测）
-  - `$HOME/.codex/config.toml`
-  - `$HOME/.codex/auth.json`
-  - `$HOME/.claude/settings.json`
+市面上的 AI 配置工具普遍臃肿、交互繁琐。**ccPivot** 专注于一件事：让你在 Windows / WSL 之间**流畅切换** Codex 和 Claude 的供应商配置。
 
-## 关键约定
-- Codex API Key 字段：`OPENAI_API_KEY`（写入 `~/.codex/auth.json`）
-- 新建 Codex 供应商默认包含：
-  - `wire_api = "responses"`
-  - `requires_openai_auth = true`
+- **轻量** — 单文件 Python 脚本，不依赖重型框架
+- **直观** — 左右分栏布局，供应商列表一目了然
+- **敏捷** — 一键同步到 Windows、WSL 或两端
+
+## 安装
+
+### 环境要求
+
+- Windows 10+
+- Python 3.6+
+- tkinter（Python 自带，无需额外安装）
+
+### 安装步骤
+
+```bash
+# 1. 克隆仓库
+git clone <repo-url>
+cd tool
+
+# 2. 安装依赖
+pip install toml
+
+# 或双击运行
+install_dependencies.bat
+```
+
+> 可选依赖：`pip install ttkbootstrap` 可获得更现代的主题风格。
+
+### 启动
+
+双击 `ccPivot.exe` 即可静默启动（无需终端窗口）。
+
+> `ccPivot.exe` 由 PyInstaller 构建，内部自动定位 `pythonw.exe` 并以 `CREATE_NO_WINDOW` 方式启动主程序，确保零控制台闪烁。
+
+## 功能概览
+
+| 功能 | Codex | Claude |
+|------|-------|--------|
+| 供应商 CRUD | ✓ | ✓ |
+| Base URL / Model / API Key 配置 | ✓ | ✓ |
+| 应用到 Windows | ✓ | ✓ |
+| 应用到 WSL | ✓ | ✓ |
+| 两端同步 | ✓ | ✓ |
+| 自动备份（.backup） | ✓ | ✓ |
+| 实时状态卡片 | ✓ | ✓ |
+
+## 使用指南
+
+### Codex 配置
+
+管理 `~/.codex/config.toml` 的 `[model_providers.<name>]` 段落：
+
+1. 点击左侧列表选择供应商
+2. 在右侧表单填写 Base URL / Model / API Key
+3. 点击「保存」存储到本地供应商档案
+4. 点击「两端同步」写入配置文件并同步到 WSL
+
+### Claude 配置
+
+管理 `~/.claude/settings.json` 的 `env` 字段 (`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`)：
+
+1. 切换到「Claude 配置」标签页
+2. 操作方式与 Codex 标签页一致
+3. 配置直接写入 `settings.json` 的 `env` 段落
+
+### 同步选项
+
+| 按钮 | 行为 |
+|------|------|
+| **两端同步** | 先保存当前输入，再同时写入 Windows 和 WSL |
+| **仅 Windows** | 只修改 Windows 侧配置文件，不动 WSL |
+| **仅 WSL** | 只修改 WSL 侧配置文件，不动 Windows |
+
+底部状态卡片实时显示各端当前生效的供应商名称及其同步状态。
+
+## 配置文件位置
+
+### Windows
+
+| 配置 | 路径 |
+|------|------|
+| Codex 主配置 | `%USERPROFILE%\.codex\config.toml` |
+| Codex 认证 | `%USERPROFILE%\.codex\auth.json` |
+| Claude 配置 | `%USERPROFILE%\.claude\settings.json` |
+| 供应商档案 | `%USERPROFILE%\.config_switcher\providers.json` |
+
+### WSL（自动检测）
+
+| 配置 | 路径 |
+|------|------|
+| Codex 主配置 | `$HOME/.codex/config.toml` |
+| Codex 认证 | `$HOME/.codex/auth.json` |
+| Claude 配置 | `$HOME/.claude/settings.json` |
+
+## 安全策略
+
+- 每次写入配置前自动创建 `.backup` 备份文件
+- API Key 输入框默认遮蔽显示，可通过「显示」复选框查看
+- WSL 不可用时自动跳过同步，不影响 Windows 侧操作
+
+## 开发
+
+```bash
+# 运行测试
+python -m unittest discover -s tests -v
+
+# 语法检查
+python -m py_compile config_switcher.py
+
+# 重新构建 exe（需要 pyinstaller）
+pip install pyinstaller
+echo "import subprocess, sys; from pathlib import Path; d=Path(__file__).parent; subprocess.Popen([sys.exec_prefix+r'\pythonw.exe', str(d/'config_switcher.py')], creationflags=0x08000000, cwd=str(d))" > launcher.py
+pyinstaller --onefile --noconsole --name ccPivot launcher.py
+mv dist/ccPivot.exe . && rm -rf build dist ccPivot.spec launcher.py
+```
+
+## License
+
+MIT

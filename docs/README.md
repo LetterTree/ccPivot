@@ -1,14 +1,14 @@
-﻿# cc-config-sync 使用说明
+﻿# ccPivot 使用说明
 
 ## 工具简介
-`cc-config-sync` 是一个 Windows GUI 工具，用于统一管理 Codex 和 Claude 的多套供应商配置，并可自动同步到 WSL。
+`ccPivot` 是一个 Windows GUI 工具，用于统一管理 Codex 和 Claude 的多套供应商配置，并可自动同步到 WSL。
 
 ## 快速开始
 1. 安装依赖（首次）
    - 运行 `install_dependencies.bat`
    - 或手动执行 `pip install toml`
 2. 启动程序
-   - 双击 `启动.bat`
+   - 双击 `ccPivot.exe`
    - 或执行 `python config_switcher.py`
 
 ## 界面结构（Codex / Claude 两页统一）
