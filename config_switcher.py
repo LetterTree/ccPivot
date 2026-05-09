@@ -11,6 +11,7 @@ from tkinter import simpledialog
 import json
 import toml
 import subprocess
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import shutil
@@ -69,6 +70,53 @@ class ConfigSwitcher:
         except Exception as e:
             print(f"无法获取 WSL 路径: {e}")
         return None
+
+    def _normalize_project_key(self, key: str) -> str:
+        if not isinstance(key, str):
+            return key
+        if re.match(r"^[A-Za-z]:\\+", key):
+            return re.sub(r"\\+", r"\\", key)
+        return key
+
+    def _format_toml_scalar(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if value is None:
+            return '""'
+        escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+
+    def _render_projects_section(self, projects: Dict[str, Any]) -> str:
+        lines = []
+        normalized_projects: Dict[str, Dict[str, Any]] = {}
+        for key, value in projects.items():
+            normalized_key = self._normalize_project_key(key)
+            normalized_projects[normalized_key] = value if isinstance(value, dict) else {}
+
+        for key, value in normalized_projects.items():
+            literal_key = key.replace("'", "''")
+            lines.append(f"[projects.'{literal_key}']")
+            for item_key, item_value in value.items():
+                if isinstance(item_value, dict):
+                    continue
+                lines.append(f"{item_key} = {self._format_toml_scalar(item_value)}")
+            lines.append("")
+        return "\n".join(lines).rstrip()
+
+    def _write_codex_config(self, data: Dict[str, Any]):
+        data_to_dump = dict(data)
+        projects = data_to_dump.pop('projects', None)
+
+        text = toml.dumps(data_to_dump).rstrip()
+        if projects:
+            projects_text = self._render_projects_section(projects)
+            text = f"{text}\n\n{projects_text}" if text else projects_text
+        text = (text.rstrip() + "\n") if text else ""
+
+        with open(self.codex_config_path, 'w', encoding='utf-8') as f:
+            f.write(text)
 
     def _delayed_load(self):
         """延迟加载配置，避免阻塞 UI"""
@@ -211,7 +259,12 @@ class ConfigSwitcher:
                     claude = data.get('claude', {}) or {}
 
                     # 从 providers.json 中补充 API key 到已加载的供应商
-                    for name, p in (codex.get('providers', {}) or {}).items():
+                    codex_saved_providers = (
+                        codex.get('providers')
+                        if isinstance(codex.get('providers'), dict)
+                        else codex.get('profiles', {})
+                    ) or {}
+                    for name, p in codex_saved_providers.items():
                         if name in self.codex_providers:
                             # 供应商已从 config.toml 加载，只补充 API key
                             if p and p.get('api_key'):
@@ -295,7 +348,7 @@ class ConfigSwitcher:
             'version': 3,
             'codex': {
                 'last_active': self.codex_active_provider,
-                'profiles': self.codex_providers,
+                'providers': self.codex_providers,
             },
             'claude': {
                 'last_active': self.claude_active_profile,
@@ -464,8 +517,7 @@ class ConfigSwitcher:
             # 4. 备份并保存
             if self.codex_config_path.exists():
                 shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
-            with open(self.codex_config_path, 'w', encoding='utf-8') as f:
-                toml.dump(data, f)
+            self._write_codex_config(data)
 
             # 5. 更新 auth.json 中的 API Key
             if provider_config.get('api_key'):
@@ -533,8 +585,7 @@ class ConfigSwitcher:
                     del data['model_providers'][provider_name]
 
                     shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
-                    with open(self.codex_config_path, 'w', encoding='utf-8') as f:
-                        toml.dump(data, f)
+                    self._write_codex_config(data)
 
                     self.sync_file_to_wsl(self.codex_config_path, 'config.toml')
 
@@ -594,8 +645,7 @@ class ConfigSwitcher:
             # 4. 备份并保存
             if self.codex_config_path.exists():
                 shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
-            with open(self.codex_config_path, 'w', encoding='utf-8') as f:
-                toml.dump(data, f)
+            self._write_codex_config(data)
 
             # 5. 更新 auth.json 中的 API Key
             if provider.get('api_key'):
@@ -608,6 +658,7 @@ class ConfigSwitcher:
 
             self.codex_active_provider = provider_name
             self._persist_profiles()
+            self._load_codex_provider_to_ui(provider_name)
 
             messagebox.showinfo('成功', f'已切换到 Codex 供应商"{provider_name}"')
             self.set_status(f'已切换到 Codex 供应商: {provider_name}')
