@@ -1,3 +1,2 @@
 @echo off
-python config_switcher.py
-pause
+start pythonw config_switcher.py

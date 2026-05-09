@@ -198,7 +198,7 @@ WSL 侧：$HOME/.claude/settings.json
                     self.claude_baseurl.insert(0, env.get('ANTHROPIC_BASE_URL', ''))
 
                     self.claude_model.delete(0, tk.END)
-                    self.claude_model.insert(0, data.get('model', ''))
+                    self.claude_model.insert(0, env.get('ANTHROPIC_MODEL', ''))
                 except Exception as e:
                     self.set_status(f"加载 Claude 配置失败: {e}", "error")
         else:
@@ -306,7 +306,7 @@ WSL 侧：$HOME/.claude/settings.json
             if 'env' not in data:
                 data['env'] = {}
 
-            # 更新配置 - API Key 和 Base URL 在 env 对象中
+            # 更新配置 - 全部放在 env 对象中
             if api_key:
                 data['env']['ANTHROPIC_AUTH_TOKEN'] = api_key
             elif 'ANTHROPIC_AUTH_TOKEN' in data['env'] and not api_key:
@@ -317,11 +317,13 @@ WSL 侧：$HOME/.claude/settings.json
             elif 'ANTHROPIC_BASE_URL' in data['env'] and not base_url:
                 del data['env']['ANTHROPIC_BASE_URL']
 
-            # model 在顶层
             if model:
-                data['model'] = model
-            elif 'model' in data and not model:
-                del data['model']
+                data['env']['ANTHROPIC_MODEL'] = model
+            elif 'ANTHROPIC_MODEL' in data['env'] and not model:
+                del data['env']['ANTHROPIC_MODEL']
+
+            # 同时清理旧的顶层 model 字段（如果存在）
+            data.pop('model', None)
 
             # 确保目录存在
             self.claude_dir.mkdir(parents=True, exist_ok=True)
