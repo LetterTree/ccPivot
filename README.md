@@ -1,5 +1,9 @@
 # ccPivot
 
+<p align="center">
+  <img src="ccPivot.png" alt="ccPivot" width="128">
+</p>
+
 轻量级 AI Agent 自定义供应商管理工具 — 更优雅、更简洁地管理 Codex 与 Claude 的多套供应商配置。
 
 ![ccPivot 界面截图](docs/screenshot.png)
@@ -17,8 +21,6 @@
 ### 环境要求
 
 - Windows 10+
-- Python 3.6+
-- tkinter（Python 自带，无需额外安装）
 
 ### 安装步骤
 
@@ -27,20 +29,33 @@
 git clone <repo-url>
 cd tool
 
-# 2. 安装依赖
-pip install toml
+# 2. 双击 ccPivot.exe 即可使用
+```
+
+> `ccPivot.exe` 是自包含的可执行文件，内置 Python 解释器及所有依赖（tkinter、toml、ttkbootstrap），无需额外安装任何环境。
+
+### 开发环境
+
+如需从源码运行或修改代码：
+
+```bash
+# 安装依赖
+pip install toml ttkbootstrap
 
 # 或双击运行
 install_dependencies.bat
+
+# 启动
+python config_switcher.py
 ```
 
-> 可选依赖：`pip install ttkbootstrap` 可获得更现代的主题风格。
+重新构建 exe：
 
-### 启动
-
-双击 `ccPivot.exe` 即可静默启动（无需终端窗口）。
-
-> `ccPivot.exe` 由 PyInstaller 构建，内部自动定位 `pythonw.exe` 并以 `CREATE_NO_WINDOW` 方式启动主程序，确保零控制台闪烁。
+```bash
+pip install pyinstaller
+pyinstaller --onefile --noconsole --name ccPivot config_switcher.py
+# 构建产物在 dist/ccPivot.exe
+```
 
 ## 功能概览
 
@@ -117,11 +132,9 @@ python -m unittest discover -s tests -v
 # 语法检查
 python -m py_compile config_switcher.py
 
-# 重新构建 exe（需要 pyinstaller）
+# 构建 exe（需要 pyinstaller）
 pip install pyinstaller
-echo "import subprocess, sys; from pathlib import Path; d=Path(__file__).parent; subprocess.Popen([sys.exec_prefix+r'\pythonw.exe', str(d/'config_switcher.py')], creationflags=0x08000000, cwd=str(d))" > launcher.py
-pyinstaller --onefile --noconsole --name ccPivot launcher.py
-mv dist/ccPivot.exe . && rm -rf build dist ccPivot.spec launcher.py
+pyinstaller --onefile --noconsole --name ccPivot config_switcher.py
 ```
 
 ## License

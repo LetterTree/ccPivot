@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import shutil
+import sys
 
 try:
     import ttkbootstrap as tb
@@ -34,8 +35,9 @@ class ConfigSwitcher:
             print("初始化开始...")
             self.root = root
             self.root.title("ccPivot")
-            self.root.geometry("820x460")
-            self.root.minsize(760, 420)
+            self.root.geometry("960x560")
+            self.root.minsize(900, 500)
+            self._set_app_icon()
             self.theme_available = tb is not None
 
             print("初始化变量...")
@@ -425,6 +427,23 @@ class ConfigSwitcher:
         status_bar.columnconfigure(0, weight=1)
         self.status_label = ttk.Label(status_bar, text="就绪", anchor=tk.W, style='Status.TLabel')
         self.status_label.grid(row=0, column=0, sticky='ew')
+
+    def _set_app_icon(self):
+        """Set window/taskbar icon, works both in dev and PyInstaller bundle."""
+        try:
+            if getattr(sys, 'frozen', False):
+                import os as _os
+                base = _os.path.join(sys._MEIPASS, '')
+            else:
+                base = str(Path(__file__).parent) + '\\'
+            # iconbitmap for Windows title bar (most reliable)
+            self.root.iconbitmap(base + 'ccPivot.ico')
+            # iconphoto for taskbar
+            img = tk.PhotoImage(file=base + 'ccPivot.png')
+            self.root.iconphoto(True, img)
+            self._icon_img = img
+        except Exception:
+            pass
 
     def _setup_theme(self):
         style = ttk.Style()

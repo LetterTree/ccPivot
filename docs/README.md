@@ -4,11 +4,11 @@
 `ccPivot` 是一个 Windows GUI 工具，用于统一管理 Codex 和 Claude 的多套供应商配置，并可自动同步到 WSL。
 
 ## 快速开始
-1. 安装依赖（首次）
+1. 安装依赖（仅从源码运行时需要）
    - 运行 `install_dependencies.bat`
-   - 或手动执行 `pip install toml`
+   - 或手动执行 `pip install toml ttkbootstrap`
 2. 启动程序
-   - 双击 `ccPivot.exe`
+   - 双击 `ccPivot.exe`（推荐，内置所有依赖，无需安装任何环境）
    - 或执行 `python config_switcher.py`
 
 ## 界面结构（Codex / Claude 两页统一）
