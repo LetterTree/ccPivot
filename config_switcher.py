@@ -18,6 +18,12 @@ import shutil
 
 
 class ConfigSwitcher:
+    CLAUDE_ENV_KEYS = (
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+    )
+
     def __init__(self, root):
         try:
             print("初始化开始...")
@@ -45,6 +51,7 @@ class ConfigSwitcher:
             self.claude_settings_path = self.claude_dir / "settings.json"
 
             print("获取 WSL 路径...")
+            self.wsl_distro = self.get_wsl_distro()
             self.wsl_home = self.get_wsl_home()
 
             print("设置 UI...")
@@ -73,6 +80,32 @@ class ConfigSwitcher:
             print(f"无法获取 WSL 路径: {e}")
         return None
 
+    def _decode_wsl_text(self, raw: bytes) -> str:
+        raw = raw or b""
+        if b"\x00" in raw:
+            return raw.decode("utf-16le").replace("\ufeff", "")
+        return raw.decode("utf-8")
+
+    def get_wsl_distro(self) -> Optional[str]:
+        """获取默认 WSL 发行版名称"""
+        try:
+            result = subprocess.run(
+                ["wsl", "-l", "-q"],
+                capture_output=True,
+                text=False,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            output = self._decode_wsl_text(result.stdout)
+            for line in output.splitlines():
+                line = line.strip().replace("\x00", "")
+                if line:
+                    return line
+        except Exception as e:
+            print(f"无法获取 WSL 发行版: {e}")
+        return None
+
     def _normalize_project_key(self, key: str) -> str:
         if not isinstance(key, str):
             return key
@@ -89,6 +122,133 @@ class ConfigSwitcher:
             return '""'
         escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
+
+    def _read_json_file(self, path: Path) -> Dict[str, Any]:
+        if not path.exists():
+            return {}
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def _write_json_file(self, path: Path, data: Dict[str, Any]):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def _read_toml_file(self, path: Path) -> Dict[str, Any]:
+        if not path.exists():
+            return {}
+        return toml.load(path)
+
+    def _write_toml_file(self, path: Path, data: Dict[str, Any]):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = toml.dumps(data).rstrip()
+        text = (text.rstrip() + "\n") if text else ""
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+
+    def _extract_managed_claude_env(self, data: Dict[str, Any]) -> Dict[str, str]:
+        env = data.get('env', {}) if isinstance(data, dict) else {}
+        if not isinstance(env, dict):
+            env = {}
+        managed_env: Dict[str, str] = {}
+        for key in self.CLAUDE_ENV_KEYS:
+            value = env.get(key)
+            if value:
+                managed_env[key] = value
+        return managed_env
+
+    def _build_managed_claude_env(self, api_key: str, base_url: str, model: str) -> Dict[str, str]:
+        return {
+            'ANTHROPIC_AUTH_TOKEN': api_key,
+            'ANTHROPIC_BASE_URL': base_url,
+            'ANTHROPIC_MODEL': model,
+        }
+
+    def _merge_claude_env_into_settings(
+        self,
+        target_data: Dict[str, Any],
+        source_env: Dict[str, str],
+        remove_missing: bool = True,
+        clear_legacy_model: bool = True,
+    ) -> Dict[str, Any]:
+        data = dict(target_data or {})
+        env = data.get('env', {})
+        if not isinstance(env, dict):
+            env = {}
+        env = dict(env)
+
+        for key in self.CLAUDE_ENV_KEYS:
+            has_key = key in source_env
+            value = source_env.get(key)
+            if value:
+                env[key] = value
+            elif remove_missing and has_key:
+                env.pop(key, None)
+            elif remove_missing and not has_key:
+                env.pop(key, None)
+
+        data['env'] = env
+        if clear_legacy_model:
+            data.pop('model', None)
+        return data
+
+    def _quote_sh_value(self, value: str) -> str:
+        return "'" + value.replace("'", "'\"'\"'") + "'"
+
+    def _get_wsl_windows_path(self, wsl_path: str) -> Optional[Path]:
+        if not self.wsl_distro or not isinstance(wsl_path, str) or not wsl_path.startswith("/"):
+            return None
+        unc_path = f"\\\\wsl.localhost\\{self.wsl_distro}{wsl_path.replace('/', '\\')}"
+        return Path(unc_path)
+
+    def _run_wsl_shell(self, command: str, input_text: Optional[str] = None) -> subprocess.CompletedProcess:
+        result = subprocess.run(
+            ['wsl', 'sh', '-lc', command],
+            input=input_text,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+        )
+        if result.returncode != 0:
+            raise Exception(result.stderr.strip() or f"WSL 命令执行失败: {command}")
+        return result
+
+    def _read_wsl_json(self, wsl_path: str) -> Dict[str, Any]:
+        win_path = self._get_wsl_windows_path(wsl_path)
+        if win_path is not None:
+            return self._read_json_file(win_path)
+        quoted_path = self._quote_sh_value(wsl_path)
+        result = self._run_wsl_shell(f'if [ -f {quoted_path} ]; then cat {quoted_path}; else printf "{{}}"; fi')
+        text = (result.stdout or '').strip() or '{}'
+        return json.loads(text)
+
+    def _write_wsl_json(self, wsl_path: str, data: Dict[str, Any]):
+        win_path = self._get_wsl_windows_path(wsl_path)
+        if win_path is not None:
+            self._write_json_file(win_path, data)
+            return
+        payload = json.dumps(data, indent=2, ensure_ascii=False)
+        quoted_path = self._quote_sh_value(wsl_path)
+        self._run_wsl_shell(f'cat > {quoted_path}', input_text=payload)
+
+    def _read_wsl_toml(self, wsl_path: str) -> Dict[str, Any]:
+        win_path = self._get_wsl_windows_path(wsl_path)
+        if win_path is not None:
+            return self._read_toml_file(win_path)
+        quoted_path = self._quote_sh_value(wsl_path)
+        result = self._run_wsl_shell(f'if [ -f {quoted_path} ]; then cat {quoted_path}; else printf \"\"; fi')
+        text = result.stdout or ''
+        return toml.loads(text) if text.strip() else {}
+
+    def _write_wsl_toml(self, wsl_path: str, data: Dict[str, Any]):
+        win_path = self._get_wsl_windows_path(wsl_path)
+        if win_path is not None:
+            self._write_toml_file(win_path, data)
+            return
+        text = toml.dumps(data).rstrip()
+        text = (text.rstrip() + "\n") if text else ""
+        quoted_path = self._quote_sh_value(wsl_path)
+        self._run_wsl_shell(f'cat > {quoted_path}', input_text=text)
 
     def _render_projects_section(self, projects: Dict[str, Any]) -> str:
         lines = []
@@ -119,6 +279,37 @@ class ConfigSwitcher:
 
         with open(self.codex_config_path, 'w', encoding='utf-8') as f:
             f.write(text)
+
+    def sync_codex_config_to_wsl_for_apply(self, provider_name: str, provider: Dict[str, Any]):
+        if not self.wsl_home:
+            return
+
+        wsl_target = f"{self.wsl_home}/.codex/config.toml"
+        wsl_data = self._read_wsl_toml(wsl_target)
+        if 'model_providers' not in wsl_data:
+            wsl_data['model_providers'] = {}
+
+        existing_provider = wsl_data['model_providers'].get(provider_name, {})
+        wsl_data['model_providers'][provider_name] = self._build_codex_provider_entry(
+            provider_name,
+            provider,
+            existing_provider,
+        )
+        self._apply_codex_runtime_provider(wsl_data, provider_name, provider)
+        self._write_wsl_toml(wsl_target, wsl_data)
+
+    def sync_codex_auth_to_wsl(self, api_key: str):
+        if not self.wsl_home:
+            return
+
+        wsl_target = f"{self.wsl_home}/.codex/auth.json"
+        data = self._read_wsl_json(wsl_target)
+        if api_key:
+            data['OPENAI_API_KEY'] = api_key
+        else:
+            data.pop('OPENAI_API_KEY', None)
+        data.pop('api_key', None)
+        self._write_wsl_json(wsl_target, data)
 
     def _delayed_load(self):
         """延迟加载配置，避免阻塞 UI"""
@@ -654,7 +845,8 @@ class ConfigSwitcher:
             self._write_codex_config(data)
 
             # 5. 同步到 WSL
-            self.sync_file_to_wsl(self.codex_config_path, 'config.toml')
+            if self.wsl_home:
+                self._write_wsl_toml(f"{self.wsl_home}/.codex/config.toml", data)
 
             # 6. 更新内存中的供应商列表
             self.codex_providers[provider_name] = provider_config
@@ -733,7 +925,8 @@ class ConfigSwitcher:
                     shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
                     self._write_codex_config(data)
 
-                    self.sync_file_to_wsl(self.codex_config_path, 'config.toml')
+                    if self.wsl_home:
+                        self._write_wsl_toml(f"{self.wsl_home}/.codex/config.toml", data)
 
             # 2. 从内存删除
             if provider_name in self.codex_providers:
@@ -810,9 +1003,8 @@ class ConfigSwitcher:
             self._update_codex_auth_basic(provider.get('api_key', ''))
 
             # 7. 同步到 WSL
-            self.sync_file_to_wsl(self.codex_config_path, 'config.toml')
-            if self.codex_auth_path.exists():
-                self.sync_file_to_wsl(self.codex_auth_path, 'auth.json')
+            self.sync_codex_config_to_wsl_for_apply(provider_name, provider)
+            self.sync_codex_auth_to_wsl(provider.get('api_key', ''))
 
             self.codex_providers[provider_name] = provider
             self.codex_active_provider = provider_name
@@ -1175,34 +1367,11 @@ class ConfigSwitcher:
     def _write_claude_settings(self, api_key: str, base_url: str, model: str):
         """写入 Claude settings.json（抛出异常，由上层决定是否弹窗）"""
         # 读取现有配置（如果存在）
-        if self.claude_settings_path.exists():
-            with open(self.claude_settings_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        else:
-            data = {}
-
-        # 确保 env 对象存在
-        if 'env' not in data:
-            data['env'] = {}
-
-        # 更新配置 - 全部放在 env 对象中
-        if api_key:
-            data['env']['ANTHROPIC_AUTH_TOKEN'] = api_key
-        elif 'ANTHROPIC_AUTH_TOKEN' in data['env'] and not api_key:
-            del data['env']['ANTHROPIC_AUTH_TOKEN']
-
-        if base_url:
-            data['env']['ANTHROPIC_BASE_URL'] = base_url
-        elif 'ANTHROPIC_BASE_URL' in data['env'] and not base_url:
-            del data['env']['ANTHROPIC_BASE_URL']
-
-        if model:
-            data['env']['ANTHROPIC_MODEL'] = model
-        elif 'ANTHROPIC_MODEL' in data['env'] and not model:
-            del data['env']['ANTHROPIC_MODEL']
-
-        # 同时清理旧的顶层 model 字段（如果存在）
-        data.pop('model', None)
+        data = self._read_json_file(self.claude_settings_path)
+        data = self._merge_claude_env_into_settings(
+            data,
+            self._build_managed_claude_env(api_key, base_url, model),
+        )
 
         # 确保目录存在
         self.claude_dir.mkdir(parents=True, exist_ok=True)
@@ -1212,33 +1381,27 @@ class ConfigSwitcher:
             shutil.copy(self.claude_settings_path, str(self.claude_settings_path) + '.backup')
 
         # 写入 Windows 侧配置
-        with open(self.claude_settings_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        self._write_json_file(self.claude_settings_path, data)
 
         # 同步到 WSL
-        self.sync_claude_to_wsl()
+        self.sync_claude_to_wsl(api_key=api_key, base_url=base_url, model=model)
 
-    def sync_claude_to_wsl(self):
+    def sync_claude_to_wsl(self, api_key: str, base_url: str, model: str):
         """同步 Claude 配置到 WSL"""
         if not self.wsl_home:
             return
 
         try:
-            if self.claude_settings_path.exists():
-                # 创建 WSL 侧的 .claude 目录
-                wsl_claude_dir = f"{self.wsl_home}/.claude"
-                subprocess.run(['wsl', 'mkdir', '-p', wsl_claude_dir], capture_output=True)
-
-                # 复制文件
-                win_path_str = str(self.claude_settings_path).replace('\\', '/')
-                wsl_win_path = f"/mnt/{win_path_str[0].lower()}/{win_path_str[3:]}"
-                wsl_target = f"{wsl_claude_dir}/settings.json"
-
-                cmd = f'wsl cp "{wsl_win_path}" "{wsl_target}"'
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-
-                if result.returncode != 0:
-                    raise Exception(f"同步失败: {result.stderr}")
+            # 创建 WSL 侧的 .claude 目录
+            wsl_claude_dir = f"{self.wsl_home}/.claude"
+            subprocess.run(['wsl', 'mkdir', '-p', wsl_claude_dir], capture_output=True)
+            wsl_target = f"{wsl_claude_dir}/settings.json"
+            wsl_data = self._read_wsl_json(wsl_target)
+            merged_data = self._merge_claude_env_into_settings(
+                wsl_data,
+                self._build_managed_claude_env(api_key, base_url, model),
+            )
+            self._write_wsl_json(wsl_target, merged_data)
         except Exception as e:
             print(f"同步 Claude 配置到 WSL 失败: {e}")
 
@@ -1249,15 +1412,20 @@ class ConfigSwitcher:
 
         try:
             if win_path.exists():
+                wsl_codex_dir = f"{self.wsl_home}/.codex"
+                wsl_target = f"{wsl_codex_dir}/{filename}"
+                win_target = self._get_wsl_windows_path(wsl_target)
+                if win_target is not None:
+                    win_target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(win_path, win_target)
+                    return
+
                 win_path_str = str(win_path).replace('\\', '/')
                 # 转换为 WSL 路径格式
                 wsl_win_path = f"/mnt/{win_path_str[0].lower()}/{win_path_str[3:]}"
 
                 # WSL 侧也创建 .codex 目录
-                wsl_codex_dir = f"{self.wsl_home}/.codex"
                 subprocess.run(['wsl', 'mkdir', '-p', wsl_codex_dir], capture_output=True)
-
-                wsl_target = f"{wsl_codex_dir}/{filename}"
 
                 cmd = f'wsl cp "{wsl_win_path}" "{wsl_target}"'
                 result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
