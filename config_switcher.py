@@ -29,8 +29,10 @@ class ConfigSwitcher:
             print("初始化变量...")
             self.app_dir = Path.home() / ".config_switcher"
             self.profiles_path = self.app_dir / "providers.json"
+            self.codex_runtime_provider_alias = "cc_session_shared"
             self.codex_providers: Dict[str, Dict[str, Any]] = {}
             self.codex_active_provider: Optional[str] = None
+            self.codex_selected_provider: Optional[str] = None
             self.claude_profiles: Dict[str, Dict[str, Any]] = {}
             self.claude_active_profile: Optional[str] = None
 
@@ -144,6 +146,11 @@ class ConfigSwitcher:
             print(f"加载配置失败: {e}")
             self.set_status(f"加载失败: {e}", "error")
 
+    def reload_all_configs(self):
+        """同时刷新系统配置与工具内部供应商列表"""
+        self.load_configs()
+        self.load_profiles()
+
     def setup_ui(self):
         """设置用户界面"""
         # 状态栏（固定在底部）
@@ -153,7 +160,7 @@ class ConfigSwitcher:
         # 底部按钮区域（固定在状态栏上方）
         button_frame = ttk.Frame(self.root)
         button_frame.pack(side='bottom', fill='x', padx=10, pady=(4, 2))
-        ttk.Button(button_frame, text="刷新配置", command=self.load_configs).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="刷新配置", command=self.reload_all_configs).pack(side='left', padx=5)
 
         # 创建 Notebook (标签页)
         notebook = ttk.Notebook(self.root)
@@ -185,6 +192,91 @@ class ConfigSwitcher:
             'model': profile.get('model', ''),
         }
 
+    def _is_codex_runtime_provider_alias(self, provider_name: str) -> bool:
+        return provider_name == self.codex_runtime_provider_alias
+
+    def _build_codex_provider_entry(
+        self,
+        provider_name: str,
+        provider_config: Dict[str, Any],
+        existing_provider: Optional[Dict[str, Any]] = None,
+        entry_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        provider_entry = {
+            'name': entry_name or provider_config.get('name', provider_name),
+            'base_url': provider_config.get('base_url', ''),
+            'model': provider_config.get('model', ''),
+            'wire_api': 'responses',
+            'requires_openai_auth': True,
+        }
+        if isinstance(existing_provider, dict):
+            if 'wire_api' in existing_provider:
+                provider_entry['wire_api'] = existing_provider['wire_api']
+            if 'requires_openai_auth' in existing_provider:
+                provider_entry['requires_openai_auth'] = existing_provider['requires_openai_auth']
+        return provider_entry
+
+    def _match_codex_active_provider_from_runtime(
+        self,
+        runtime_config: Dict[str, Any],
+        top_level_model: str,
+    ) -> Optional[str]:
+        if not isinstance(runtime_config, dict):
+            return None
+
+        runtime_name = (runtime_config.get('name') or '').strip()
+        if runtime_name in self.codex_providers:
+            return runtime_name
+
+        runtime_base_url = (runtime_config.get('base_url') or '').strip()
+        runtime_model = (runtime_config.get('model') or top_level_model or '').strip()
+        for name, provider in self.codex_providers.items():
+            if (
+                (provider.get('base_url') or '').strip() == runtime_base_url
+                and (provider.get('model') or '').strip() == runtime_model
+            ):
+                return name
+        return None
+
+    def _apply_codex_runtime_provider(
+        self,
+        data: Dict[str, Any],
+        provider_name: str,
+        provider: Dict[str, Any],
+    ):
+        if 'model_providers' not in data:
+            data['model_providers'] = {}
+
+        model_providers = data['model_providers']
+        model_providers[self.codex_runtime_provider_alias] = self._build_codex_provider_entry(
+            self.codex_runtime_provider_alias,
+            provider,
+            model_providers.get(self.codex_runtime_provider_alias, {}),
+            entry_name=provider_name,
+        )
+        data['model_provider'] = self.codex_runtime_provider_alias
+
+        if provider.get('base_url'):
+            data['base_url'] = provider['base_url']
+        else:
+            data.pop('base_url', None)
+        if provider.get('model'):
+            data['model'] = provider['model']
+        else:
+            data.pop('model', None)
+
+    def _clear_codex_runtime_provider(self, data: Dict[str, Any]):
+        model_providers = data.get('model_providers')
+        if isinstance(model_providers, dict):
+            model_providers.pop(self.codex_runtime_provider_alias, None)
+            if not model_providers:
+                data.pop('model_providers', None)
+
+        if data.get('model_provider') == self.codex_runtime_provider_alias:
+            data.pop('model_provider', None)
+            data.pop('base_url', None)
+            data.pop('model', None)
+
     def _load_codex_providers_from_toml(self):
         """从 config.toml 读取所有 [model_providers.xxx] 定义"""
         if not self.codex_config_path.exists():
@@ -206,6 +298,9 @@ class ConfigSwitcher:
             # 读取 model_providers 段落
             if 'model_providers' in data:
                 for provider_name, provider_config in data['model_providers'].items():
+                    if self._is_codex_runtime_provider_alias(provider_name):
+                        continue
+
                     # 如果供应商配置中没有 model，使用顶层的 model
                     provider_model = provider_config.get('model', '') or top_level_model
 
@@ -218,7 +313,10 @@ class ConfigSwitcher:
 
             # 读取当前激活的供应商
             current_provider = data.get('model_provider', '')
-            if current_provider and current_provider in self.codex_providers:
+            if current_provider == self.codex_runtime_provider_alias:
+                runtime_config = (data.get('model_providers') or {}).get(self.codex_runtime_provider_alias, {})
+                self.codex_active_provider = self._match_codex_active_provider_from_runtime(runtime_config, top_level_model)
+            elif current_provider and current_provider in self.codex_providers:
                 self.codex_active_provider = current_provider
 
             # 从 auth.json 加载 API key
@@ -242,6 +340,7 @@ class ConfigSwitcher:
         # 首先从 config.toml 加载 Codex 原生供应商定义
         self.codex_providers = {}
         self.codex_active_provider = None
+        self.codex_selected_provider = None
         self._load_codex_providers_from_toml()
 
         # Claude 配置
@@ -265,6 +364,8 @@ class ConfigSwitcher:
                         else codex.get('profiles', {})
                     ) or {}
                     for name, p in codex_saved_providers.items():
+                        if self._is_codex_runtime_provider_alias(name):
+                            continue
                         if name in self.codex_providers:
                             # 供应商已从 config.toml 加载，只补充 API key
                             if p and p.get('api_key'):
@@ -276,8 +377,16 @@ class ConfigSwitcher:
                     for name, p in (claude.get('profiles', {}) or {}).items():
                         self.claude_profiles[name] = self._normalize_claude_profile(p or {})
 
-                    if codex.get('last_active') in self.codex_providers:
-                        self.codex_active_provider = codex.get('last_active')
+                    stored_active = codex.get('last_active')
+                    if not self.codex_active_provider and stored_active in self.codex_providers:
+                        self.codex_active_provider = stored_active
+
+                    stored_selected = codex.get('last_selected')
+                    if stored_selected in self.codex_providers:
+                        self.codex_selected_provider = stored_selected
+                    elif stored_active in self.codex_providers:
+                        # 兼容旧版本：last_active 过去同时承担“当前选中项”的含义
+                        self.codex_selected_provider = stored_active
                     if claude.get('last_active') in self.claude_profiles:
                         self.claude_active_profile = claude.get('last_active')
                 else:
@@ -285,6 +394,8 @@ class ConfigSwitcher:
                     raw_profiles = data.get('profiles', {}) or {}
                     last_active = data.get('last_active')
                     for name, p in raw_profiles.items():
+                        if self._is_codex_runtime_provider_alias(name):
+                            continue
                         p = p or {}
 
                         codex_toml = p.get('codex_config_toml', '')
@@ -307,7 +418,7 @@ class ConfigSwitcher:
                         })
 
                     if last_active in self.codex_providers:
-                        self.codex_active_provider = last_active
+                        self.codex_selected_provider = last_active
                     if last_active in self.claude_profiles:
                         self.claude_active_profile = last_active
             except Exception as e:
@@ -317,6 +428,7 @@ class ConfigSwitcher:
         if not self.codex_providers:
             self.codex_providers['默认'] = self._normalize_codex_provider(self._capture_current_codex_provider())
             self.codex_active_provider = '默认'
+            self.codex_selected_provider = '默认'
 
         if not self.claude_profiles:
             self.claude_profiles['默认'] = self._normalize_claude_profile(self._capture_current_claude_profile())
@@ -329,17 +441,18 @@ class ConfigSwitcher:
 
         self._refresh_profiles_ui()
 
-        if self.codex_active_provider in self.codex_providers:
+        if self.codex_selected_provider in self.codex_providers:
             if hasattr(self, 'codex_provider_var'):
-                self.codex_provider_var.set(self.codex_active_provider)
+                self.codex_provider_var.set(self.codex_selected_provider)
             if hasattr(self, 'codex_provider_combo'):
-                self._load_codex_provider_to_ui(self.codex_active_provider)
-
+                self._load_codex_provider_to_ui(self.codex_selected_provider)
         if self.claude_active_profile in self.claude_profiles:
             if hasattr(self, 'claude_profile_var'):
                 self.claude_profile_var.set(self.claude_active_profile)
             if hasattr(self, 'claude_profile_combo'):
                 self._load_claude_profile_to_ui(self.claude_active_profile)
+
+        self._update_codex_applied_label()
 
     def _persist_profiles(self):
         """保存 profiles 到磁盘（v3）"""
@@ -348,7 +461,12 @@ class ConfigSwitcher:
             'version': 3,
             'codex': {
                 'last_active': self.codex_active_provider,
-                'providers': self.codex_providers,
+                'last_selected': self.codex_selected_provider,
+                'providers': {
+                    name: provider
+                    for name, provider in self.codex_providers.items()
+                    if not self._is_codex_runtime_provider_alias(name)
+                },
             },
             'claude': {
                 'last_active': self.claude_active_profile,
@@ -362,14 +480,30 @@ class ConfigSwitcher:
         codex_names = sorted(self.codex_providers.keys())
         if hasattr(self, 'codex_provider_combo'):
             self.codex_provider_combo['values'] = codex_names
-        if not self.codex_active_provider and codex_names:
-            self.codex_active_provider = codex_names[0]
+        if codex_names and self.codex_selected_provider not in codex_names:
+            if self.codex_active_provider in codex_names:
+                self.codex_selected_provider = self.codex_active_provider
+            else:
+                self.codex_selected_provider = codex_names[0]
 
         claude_names = sorted(self.claude_profiles.keys())
         if hasattr(self, 'claude_profile_combo'):
             self.claude_profile_combo['values'] = claude_names
         if not self.claude_active_profile and claude_names:
             self.claude_active_profile = claude_names[0]
+
+        self._update_codex_applied_label()
+
+    def _update_codex_applied_label(self):
+        """刷新 Codex 当前已应用/当前编辑的提示文本"""
+        if not hasattr(self, 'codex_applied_var'):
+            return
+
+        applied_name = self.codex_active_provider or '未应用'
+        text = f'当前已应用: {applied_name}'
+        if self.codex_selected_provider and self.codex_selected_provider != self.codex_active_provider:
+            text += f'    当前编辑: {self.codex_selected_provider}'
+        self.codex_applied_var.set(text)
 
     def _capture_current_codex_provider(self) -> Dict[str, Any]:
         """从 UI 捕获当前 Codex 供应商配置"""
@@ -427,8 +561,9 @@ class ConfigSwitcher:
         name = self.codex_provider_var.get().strip()
         if not name or name not in self.codex_providers:
             return
-        self.codex_active_provider = name
+        self.codex_selected_provider = name
         self._load_codex_provider_to_ui(name)
+        self._update_codex_applied_label()
         try:
             self._persist_profiles()
         except Exception as e:
@@ -453,6 +588,9 @@ class ConfigSwitcher:
         name = name.strip()
         if not name:
             return
+        if self._is_codex_runtime_provider_alias(name):
+            messagebox.showerror('错误', f'供应商名称"{name}"为内部保留名称，请更换一个名称。')
+            return
         if name in self.codex_providers:
             messagebox.showwarning('警告', f'供应商"{name}"已存在，请使用"保存"按钮更新。')
             return
@@ -465,10 +603,11 @@ class ConfigSwitcher:
             'api_key': '',
         })
 
-        self.codex_active_provider = name
+        self.codex_selected_provider = name
         self._refresh_profiles_ui()
         self.codex_provider_var.set(name)
         self._load_codex_provider_to_ui(name)
+        self._update_codex_applied_label()
 
         try:
             self._persist_profiles()
@@ -482,9 +621,12 @@ class ConfigSwitcher:
         if not provider_name:
             messagebox.showerror('错误', '请先选择或创建一个供应商。')
             return
+        if self._is_codex_runtime_provider_alias(provider_name):
+            messagebox.showerror('错误', f'供应商名称"{provider_name}"为内部保留名称，不能直接保存。')
+            return
 
         # 从 UI 捕获配置
-        provider_config = self._capture_current_codex_provider()
+        provider_config = self._normalize_codex_provider(self._capture_current_codex_provider())
 
         try:
             # 1. 读取现有 config.toml
@@ -500,43 +642,30 @@ class ConfigSwitcher:
 
             # 3. 更新供应商定义（不包含 API key）
             existing_provider = data['model_providers'].get(provider_name, {})
-            provider_entry = {
-                'name': provider_config.get('name', provider_name),
-                'base_url': provider_config.get('base_url', ''),
-                'model': provider_config.get('model', ''),
-                'wire_api': 'responses',
-                'requires_openai_auth': True,
-            }
-            if isinstance(existing_provider, dict):
-                if 'wire_api' in existing_provider:
-                    provider_entry['wire_api'] = existing_provider['wire_api']
-                if 'requires_openai_auth' in existing_provider:
-                    provider_entry['requires_openai_auth'] = existing_provider['requires_openai_auth']
-            data['model_providers'][provider_name] = provider_entry
+            data['model_providers'][provider_name] = self._build_codex_provider_entry(
+                provider_name,
+                provider_config,
+                existing_provider,
+            )
 
             # 4. 备份并保存
             if self.codex_config_path.exists():
                 shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
             self._write_codex_config(data)
 
-            # 5. 更新 auth.json 中的 API Key
-            if provider_config.get('api_key'):
-                self._update_codex_auth_basic(provider_config['api_key'])
-
-            # 6. 同步到 WSL
+            # 5. 同步到 WSL
             self.sync_file_to_wsl(self.codex_config_path, 'config.toml')
-            if self.codex_auth_path.exists():
-                self.sync_file_to_wsl(self.codex_auth_path, 'auth.json')
 
-            # 7. 更新内存中的供应商列表
+            # 6. 更新内存中的供应商列表
             self.codex_providers[provider_name] = provider_config
-            self.codex_active_provider = provider_name
+            self.codex_selected_provider = provider_name
 
-            # 8. 保存到 providers.json
+            # 7. 保存到 providers.json
             self._persist_profiles()
+            self._update_codex_applied_label()
 
-            messagebox.showinfo('成功', f'供应商"{provider_name}"已保存到 config.toml')
-            self.set_status(f'已保存 Codex 供应商: {provider_name}')
+            messagebox.showinfo('成功', f'供应商"{provider_name}"已保存到 config.toml。\n当前运行配置未切换，如需生效请点击“应用该供应商”。')
+            self.set_status(f'已保存 Codex 供应商定义: {provider_name}')
 
         except Exception as e:
             messagebox.showerror('错误', f'保存供应商失败:\n{e}')
@@ -545,9 +674,6 @@ class ConfigSwitcher:
 
     def _update_codex_auth_basic(self, api_key: str):
         """更新 auth.json 中的 API key"""
-        if not api_key:
-            return
-
         if self.codex_auth_path.exists():
             with open(self.codex_auth_path, 'r', encoding='utf-8') as f:
                 try:
@@ -557,7 +683,10 @@ class ConfigSwitcher:
         else:
             data = {}
 
-        data['OPENAI_API_KEY'] = api_key
+        if api_key:
+            data['OPENAI_API_KEY'] = api_key
+        else:
+            data.pop('OPENAI_API_KEY', None)
         data.pop('api_key', None)
 
         self.codex_dir.mkdir(parents=True, exist_ok=True)
@@ -573,6 +702,9 @@ class ConfigSwitcher:
         if not provider_name:
             messagebox.showerror('错误', '请先选择一个供应商。')
             return
+        if self._is_codex_runtime_provider_alias(provider_name):
+            messagebox.showerror('错误', '该内部运行供应商不能直接删除。')
+            return
 
         if not messagebox.askyesno('确认删除', f'确定要删除供应商"{provider_name}"？\n这将从 config.toml 中移除该供应商定义。'):
             return
@@ -581,9 +713,23 @@ class ConfigSwitcher:
             # 1. 从 config.toml 删除
             if self.codex_config_path.exists():
                 data = toml.load(self.codex_config_path)
+                config_changed = False
                 if 'model_providers' in data and provider_name in data['model_providers']:
                     del data['model_providers'][provider_name]
+                    config_changed = True
 
+                if self.codex_active_provider == provider_name:
+                    runtime_exists = (
+                        data.get('model_provider') == self.codex_runtime_provider_alias
+                        or (
+                            isinstance(data.get('model_providers'), dict)
+                            and self.codex_runtime_provider_alias in data['model_providers']
+                        )
+                    )
+                    self._clear_codex_runtime_provider(data)
+                    config_changed = config_changed or runtime_exists
+
+                if config_changed:
                     shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
                     self._write_codex_config(data)
 
@@ -593,20 +739,24 @@ class ConfigSwitcher:
             if provider_name in self.codex_providers:
                 del self.codex_providers[provider_name]
 
-            # 3. 选择新的激活供应商
+            # 3. 处理当前编辑项/已应用项
+            if self.codex_selected_provider == provider_name:
+                self.codex_selected_provider = None
             if self.codex_active_provider == provider_name:
                 self.codex_active_provider = None
 
             self._refresh_profiles_ui()
             values = list(self.codex_provider_combo['values'])
             if values:
-                self.codex_active_provider = values[0]
-                self.codex_provider_var.set(self.codex_active_provider)
-                self._load_codex_provider_to_ui(self.codex_active_provider)
+                if self.codex_selected_provider not in self.codex_providers:
+                    self.codex_selected_provider = values[0]
+                self.codex_provider_var.set(self.codex_selected_provider)
+                self._load_codex_provider_to_ui(self.codex_selected_provider)
             else:
                 self.codex_provider_var.set('')
 
             self._persist_profiles()
+            self._update_codex_applied_label()
             messagebox.showinfo('成功', f'供应商"{provider_name}"已删除')
             self.set_status(f'已删除 Codex 供应商: {provider_name}')
 
@@ -620,9 +770,14 @@ class ConfigSwitcher:
         if not provider_name or provider_name not in self.codex_providers:
             messagebox.showerror('错误', '请先选择一个 Codex 供应商。')
             return
-
-        if not messagebox.askyesno('确认切换', f'切换到 Codex 供应商"{provider_name}"？\n这将修改 config.toml 中的 model_provider 字段。'):
+        if self._is_codex_runtime_provider_alias(provider_name):
+            messagebox.showerror('错误', '该内部运行供应商不能直接应用。')
             return
+
+        if not messagebox.askyesno('确认切换', f'切换到 Codex 供应商"{provider_name}"？\n这会先保存当前输入，并使用固定运行别名以共享 Codex 会话列表。'):
+            return
+
+        provider = self._normalize_codex_provider(self._capture_current_codex_provider())
 
         try:
             # 1. 读取现有 config.toml
@@ -632,37 +787,44 @@ class ConfigSwitcher:
                 self.codex_dir.mkdir(parents=True, exist_ok=True)
                 data = {}
 
-            # 2. 修改 model_provider 字段
-            data['model_provider'] = provider_name
+            # 2. 先保存当前供应商定义（不包含 API key）
+            if 'model_providers' not in data:
+                data['model_providers'] = {}
 
-            # 3. 从供应商配置更新顶层字段
-            provider = self.codex_providers[provider_name]
-            if provider.get('base_url'):
-                data['base_url'] = provider['base_url']
-            if provider.get('model'):
-                data['model'] = provider['model']
+            existing_provider = data['model_providers'].get(provider_name, {})
+            data['model_providers'][provider_name] = self._build_codex_provider_entry(
+                provider_name,
+                provider,
+                existing_provider,
+            )
 
-            # 4. 备份并保存
+            # 3. 使用固定运行别名应用当前供应商，保证 Codex 会话列表共享
+            self._apply_codex_runtime_provider(data, provider_name, provider)
+
+            # 5. 备份并保存
             if self.codex_config_path.exists():
                 shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
             self._write_codex_config(data)
 
-            # 5. 更新 auth.json 中的 API Key
-            if provider.get('api_key'):
-                self._update_codex_auth_basic(provider['api_key'])
+            # 6. 更新 auth.json 中的 API Key
+            self._update_codex_auth_basic(provider.get('api_key', ''))
 
-            # 6. 同步到 WSL
+            # 7. 同步到 WSL
             self.sync_file_to_wsl(self.codex_config_path, 'config.toml')
             if self.codex_auth_path.exists():
                 self.sync_file_to_wsl(self.codex_auth_path, 'auth.json')
 
+            self.codex_providers[provider_name] = provider
             self.codex_active_provider = provider_name
+            self.codex_selected_provider = provider_name
             self._persist_profiles()
             self._load_codex_provider_to_ui(provider_name)
+            self._update_codex_applied_label()
 
-            messagebox.showinfo('成功', f'已切换到 Codex 供应商"{provider_name}"')
-            self.set_status(f'已切换到 Codex 供应商: {provider_name}')
+            messagebox.showinfo('成功', f'已保存并切换到 Codex 供应商"{provider_name}"，当前已启用共享会话模式。')
+            self.set_status(f'已保存并切换到 Codex 供应商（共享会话）: {provider_name}')
             self.load_configs()  # 刷新 UI
+            self._update_codex_applied_label()
 
         except Exception as e:
             messagebox.showerror('错误', f'切换供应商失败:\n{e}')
@@ -695,7 +857,8 @@ class ConfigSwitcher:
             messagebox.showerror('错误', '请先选择一个 Claude 供应商，或点击“新增”。')
             return
 
-        self.claude_profiles[name] = self._normalize_claude_profile(self._capture_current_claude_profile())
+        profile = self._normalize_claude_profile(self._capture_current_claude_profile())
+        self.claude_profiles[name] = profile
         self.claude_active_profile = name
         try:
             self._persist_profiles()
@@ -736,18 +899,22 @@ class ConfigSwitcher:
         if not name or name not in self.claude_profiles:
             messagebox.showerror('错误', '请先选择一个 Claude 供应商。')
             return
-        profile = self.claude_profiles[name]
-        if not messagebox.askyesno('确认应用', f'将 Claude 供应商“{name}”配置写入到系统配置文件？'):
+        if not messagebox.askyesno('确认应用', f'将当前输入保存到 Claude 供应商“{name}”并写入系统配置文件？'):
             return
 
+        profile = self._normalize_claude_profile(self._capture_current_claude_profile())
+
         try:
+            self.claude_profiles[name] = profile
+            self.claude_active_profile = name
+            self._persist_profiles()
             self._write_claude_settings(
                 api_key=(profile.get('api_key') or '').strip(),
                 base_url=(profile.get('base_url') or '').strip(),
                 model=(profile.get('model') or '').strip(),
             )
             self.set_status(f'已应用 Claude 供应商: {name}')
-            messagebox.showinfo('成功', f'Claude 供应商“{name}”已应用并同步到 WSL（如可用）。')
+            messagebox.showinfo('成功', f'Claude 供应商“{name}”已保存并应用，且已同步到 WSL（如可用）。')
         except Exception as e:
             self.set_status(f'应用 Claude 供应商失败: {e}', 'error')
             messagebox.showerror('错误', f'应用 Claude 供应商失败:\n{e}')
@@ -769,8 +936,11 @@ class ConfigSwitcher:
         ttk.Button(provider_frame, text="删除", command=self.delete_codex_provider).pack(side='left', padx=4)
         ttk.Button(provider_frame, text="应用该供应商", command=self.switch_codex_provider).pack(side='left', padx=12)
 
+        self.codex_applied_var = tk.StringVar(value='当前已应用: 未检测')
+        ttk.Label(parent, textvariable=self.codex_applied_var, foreground='darkgreen').pack(anchor='w', padx=14, pady=(0, 4))
+
         # 说明文字
-        info_label = ttk.Label(parent, text="修改 Codex 配置文件 (~/.codex/config.toml 与 ~/.codex/auth.json)", foreground="blue")
+        info_label = ttk.Label(parent, text="“保存”只更新供应商定义；“应用该供应商”会先保存当前输入，再以固定运行别名改写 ~/.codex/config.toml 与 ~/.codex/auth.json", foreground="blue")
         info_label.pack(pady=5)
 
         # 配置表单
@@ -802,13 +972,12 @@ class ConfigSwitcher:
         note_frame.pack(fill='x', padx=10, pady=10)
 
         note_text = """配置项说明：
-• Base URL - 写入 ~/.codex/config.toml 的 model_providers.<供应商>.base_url
-• Model - 写入 ~/.codex/config.toml 的 model
-• API Key - 写入 ~/.codex/auth.json 的 OPENAI_API_KEY
+• Base URL - 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.base_url
+• Model - 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.model
+• API Key - 保存到工具内部供应商列表；点击“应用该供应商”后才写入 ~/.codex/auth.json 的 OPENAI_API_KEY
 
-应用“供应商”会切换 config.toml 中的 model_provider 并同步到 WSL（如可用）。
-新建供应商默认会带有 wire_api=\"responses\" 与 requires_openai_auth=true。"""
-
+点击“应用该供应商”会先保存当前输入，再切换到固定运行别名，以便不同供应商共享 Codex session 列表，并同步当前供应商的 API Key 到 WSL（如可用）。
+新建供应商默认会带有 wire_api="responses" 与 requires_openai_auth=true。"""
         ttk.Label(note_frame, text=note_text, justify=tk.LEFT).pack(anchor='w')
 
     def setup_claude_tab(self, parent):
@@ -829,7 +998,7 @@ class ConfigSwitcher:
         ttk.Button(provider_frame, text="应用该供应商", command=self.apply_claude_profile).pack(side='left', padx=12)
 
         # 说明文字
-        info_label = ttk.Label(parent, text="修改 Claude 配置文件 (~/.claude/settings.json)", foreground="blue")
+        info_label = ttk.Label(parent, text="“应用该供应商”会先保存当前输入，再修改 Claude 配置文件 (~/.claude/settings.json)", foreground="blue")
         info_label.pack(pady=5)
 
         # 配置表单
@@ -870,7 +1039,7 @@ class ConfigSwitcher:
 • Base URL - 存储在 env.ANTHROPIC_BASE_URL（可选）
 • Model - 存储在 env.ANTHROPIC_MODEL（可选）
 
-应用后会自动同步到 WSL（如可用）"""
+点击“应用该供应商”会先保存当前输入，再写入 settings.json，并自动同步到 WSL（如可用）"""
 
         ttk.Label(note_frame, text=note_text, justify=tk.LEFT).pack(anchor='w')
 
