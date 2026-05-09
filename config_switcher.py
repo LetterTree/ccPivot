@@ -18,34 +18,42 @@ import shutil
 
 class ConfigSwitcher:
     def __init__(self, root):
-        self.root = root
-        self.root.title("cc-config-sync")
-        self.root.geometry("1000x760")
-        self.root.minsize(760, 560)
-        # 供应商/配置档案（profiles）存储（Codex 与 Claude 分开）
-        self.app_dir = Path.home() / ".config_switcher"
-        self.profiles_path = self.app_dir / "providers.json"
-        self.codex_providers: Dict[str, Dict[str, Any]] = {}
-        self.codex_active_provider: Optional[str] = None
-        self.claude_profiles: Dict[str, Dict[str, Any]] = {}
-        self.claude_active_profile: Optional[str] = None
+        try:
+            print("初始化开始...")
+            self.root = root
+            self.root.title("cc-config-sync")
+            self.root.geometry("1000x760")
+            self.root.minsize(760, 560)
 
-        # 配置文件路径
-        self.home = Path.home()
-        self.codex_dir = self.home / ".codex"
-        self.codex_config_path = self.codex_dir / "config.toml"
-        self.codex_auth_path = self.codex_dir / "auth.json"
+            print("初始化变量...")
+            self.app_dir = Path.home() / ".config_switcher"
+            self.profiles_path = self.app_dir / "providers.json"
+            self.codex_providers: Dict[str, Dict[str, Any]] = {}
+            self.codex_active_provider: Optional[str] = None
+            self.claude_profiles: Dict[str, Dict[str, Any]] = {}
+            self.claude_active_profile: Optional[str] = None
 
-        # Claude 配置路径
-        self.claude_dir = self.home / ".claude"
-        self.claude_settings_path = self.claude_dir / "settings.json"
+            self.home = Path.home()
+            self.codex_dir = self.home / ".codex"
+            self.codex_config_path = self.codex_dir / "config.toml"
+            self.codex_auth_path = self.codex_dir / "auth.json"
 
-        # WSL 路径
-        self.wsl_home = self.get_wsl_home()
+            self.claude_dir = self.home / ".claude"
+            self.claude_settings_path = self.claude_dir / "settings.json"
 
-        self.setup_ui()
-        self.load_configs()
-        self.load_profiles()
+            print("获取 WSL 路径...")
+            self.wsl_home = self.get_wsl_home()
+
+            print("设置 UI...")
+            self.setup_ui()
+            print("初始化完成，延迟加载配置...")
+            # 延迟加载配置，避免阻塞 UI
+            self.root.after(100, self._delayed_load)
+        except Exception as e:
+            print(f"初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def get_wsl_home(self) -> Optional[str]:
         """获取 WSL 用户主目录路径"""
@@ -61,6 +69,32 @@ class ConfigSwitcher:
         except Exception as e:
             print(f"无法获取 WSL 路径: {e}")
         return None
+
+    def _delayed_load(self):
+        """延迟加载配置，避免阻塞 UI"""
+        try:
+            # 禁用下拉栏，防止加载期间操作
+            if hasattr(self, 'codex_provider_combo'):
+                self.codex_provider_combo.config(state='disabled')
+            if hasattr(self, 'claude_profile_combo'):
+                self.claude_profile_combo.config(state='disabled')
+
+            print("加载配置...")
+            self.load_configs()
+            print("加载档案...")
+            self.load_profiles()
+            print("加载完成")
+
+            # 启用下拉栏
+            if hasattr(self, 'codex_provider_combo'):
+                self.codex_provider_combo.config(state='readonly')
+            if hasattr(self, 'claude_profile_combo'):
+                self.claude_profile_combo.config(state='readonly')
+
+            self.set_status("就绪")
+        except Exception as e:
+            print(f"加载配置失败: {e}")
+            self.set_status(f"加载失败: {e}", "error")
 
     def setup_ui(self):
         """设置用户界面"""
@@ -106,6 +140,13 @@ class ConfigSwitcher:
     def _load_codex_providers_from_toml(self):
         """从 config.toml 读取所有 [model_providers.xxx] 定义"""
         if not self.codex_config_path.exists():
+            return
+
+        # 检查文件大小，防止加载损坏的巨大文件
+        file_size = self.codex_config_path.stat().st_size
+        if file_size > 1024 * 1024:  # 超过1MB
+            print(f"警告: config.toml 文件异常大 ({file_size} 字节)，跳过加载")
+            self.set_status(f"config.toml 文件异常 ({file_size // 1024}KB)，已跳过", "error")
             return
 
         try:
@@ -236,12 +277,16 @@ class ConfigSwitcher:
         self._refresh_profiles_ui()
 
         if self.codex_active_provider in self.codex_providers:
-            self.codex_provider_var.set(self.codex_active_provider)
-            self._load_codex_provider_to_ui(self.codex_active_provider)
+            if hasattr(self, 'codex_provider_var'):
+                self.codex_provider_var.set(self.codex_active_provider)
+            if hasattr(self, 'codex_provider_combo'):
+                self._load_codex_provider_to_ui(self.codex_active_provider)
 
         if self.claude_active_profile in self.claude_profiles:
-            self.claude_profile_var.set(self.claude_active_profile)
-            self._load_claude_profile_to_ui(self.claude_active_profile)
+            if hasattr(self, 'claude_profile_var'):
+                self.claude_profile_var.set(self.claude_active_profile)
+            if hasattr(self, 'claude_profile_combo'):
+                self._load_claude_profile_to_ui(self.claude_active_profile)
 
     def _persist_profiles(self):
         """保存 profiles 到磁盘（v3）"""
@@ -262,12 +307,14 @@ class ConfigSwitcher:
 
     def _refresh_profiles_ui(self):
         codex_names = sorted(self.codex_providers.keys())
-        self.codex_provider_combo['values'] = codex_names
+        if hasattr(self, 'codex_provider_combo'):
+            self.codex_provider_combo['values'] = codex_names
         if not self.codex_active_provider and codex_names:
             self.codex_active_provider = codex_names[0]
 
         claude_names = sorted(self.claude_profiles.keys())
-        self.claude_profile_combo['values'] = claude_names
+        if hasattr(self, 'claude_profile_combo'):
+            self.claude_profile_combo['values'] = claude_names
         if not self.claude_active_profile and claude_names:
             self.claude_active_profile = claude_names[0]
 
@@ -291,7 +338,10 @@ class ConfigSwitcher:
         """从供应商配置加载到 UI"""
         provider = self.codex_providers.get(name)
         if not provider:
+            print(f"警告: 供应商 '{name}' 不存在于 codex_providers 中")
             return
+
+        print(f"加载 Codex 供应商 '{name}': base_url={provider.get('base_url', '')}, model={provider.get('model', '')}, api_key={'***' if provider.get('api_key') else '(空)'}")
 
         self.codex_baseurl.delete(0, tk.END)
         self.codex_baseurl.insert(0, provider.get('base_url', ''))
@@ -400,6 +450,7 @@ class ConfigSwitcher:
             provider_entry = {
                 'name': provider_config.get('name', provider_name),
                 'base_url': provider_config.get('base_url', ''),
+                'model': provider_config.get('model', ''),
                 'wire_api': 'responses',
                 'requires_openai_auth': True,
             }
@@ -1006,9 +1057,18 @@ class ConfigSwitcher:
 
 
 def main():
-    root = tk.Tk()
-    app = ConfigSwitcher(root)
-    root.mainloop()
+    try:
+        print("创建 Tk 窗口...")
+        root = tk.Tk()
+        print("初始化应用...")
+        app = ConfigSwitcher(root)
+        print("启动主循环...")
+        root.mainloop()
+    except Exception as e:
+        print(f"程序启动失败: {e}")
+        import traceback
+        traceback.print_exc()
+        input("按回车键退出...")
 
 
 if __name__ == "__main__":
