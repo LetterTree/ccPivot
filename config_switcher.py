@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import shutil
 
+try:
+    import ttkbootstrap as tb
+except Exception:
+    tb = None
+
 
 class ConfigSwitcher:
     CLAUDE_ENV_KEYS = (
@@ -29,8 +34,9 @@ class ConfigSwitcher:
             print("初始化开始...")
             self.root = root
             self.root.title("cc-config-sync")
-            self.root.geometry("1000x760")
-            self.root.minsize(760, 560)
+            self.root.geometry("900x520")
+            self.root.minsize(760, 500)
+            self.theme_available = tb is not None
 
             print("初始化变量...")
             self.app_dir = Path.home() / ".config_switcher"
@@ -71,11 +77,11 @@ class ConfigSwitcher:
             result = subprocess.run(
                 ["wsl", "sh", "-lc", "echo $HOME"],
                 capture_output=True,
-                text=True,
+                text=False,
                 timeout=5
             )
             if result.returncode == 0:
-                return result.stdout.strip()
+                return self._decode_wsl_text(result.stdout).strip()
         except Exception as e:
             print(f"无法获取 WSL 路径: {e}")
         return None
@@ -156,6 +162,51 @@ class ConfigSwitcher:
             if value:
                 managed_env[key] = value
         return managed_env
+
+    def _match_claude_profile_from_env(self, managed_env: Dict[str, str]) -> Optional[str]:
+        if not isinstance(managed_env, dict):
+            return None
+        api_key = (managed_env.get('ANTHROPIC_AUTH_TOKEN') or '').strip()
+        base_url = (managed_env.get('ANTHROPIC_BASE_URL') or '').strip()
+        model = (managed_env.get('ANTHROPIC_MODEL') or '').strip()
+        if not api_key and not base_url and not model:
+            return None
+        for name, profile in self.claude_profiles.items():
+            if not isinstance(profile, dict):
+                continue
+            if (
+                (profile.get('api_key') or '').strip() == api_key
+                and (profile.get('base_url') or '').strip() == base_url
+                and (profile.get('model') or '').strip() == model
+            ):
+                return name
+        return None
+
+    def _detect_claude_active_profile_windows(self) -> Optional[Tuple[Optional[str], bool]]:
+        try:
+            if not self.claude_settings_path.exists():
+                return (None, False)
+            data = self._read_json_file(self.claude_settings_path)
+            managed_env = self._extract_managed_claude_env(data)
+            if not managed_env:
+                return (None, False)
+            return (self._match_claude_profile_from_env(managed_env), True)
+        except Exception as e:
+            print(f"检测 Windows 侧 Claude profile 失败: {e}")
+            return (None, False)
+
+    def _detect_claude_active_profile_wsl(self) -> Optional[Tuple[Optional[str], bool]]:
+        if not self.wsl_home:
+            return None
+        try:
+            data = self._read_wsl_json(f"{self.wsl_home}/.claude/settings.json")
+            managed_env = self._extract_managed_claude_env(data)
+            if not managed_env:
+                return (None, False)
+            return (self._match_claude_profile_from_env(managed_env), True)
+        except Exception as e:
+            print(f"检测 WSL 侧 Claude profile 失败: {e}")
+            return (None, False)
 
     def _build_managed_claude_env(self, api_key: str, base_url: str, model: str) -> Dict[str, str]:
         return {
@@ -344,18 +395,30 @@ class ConfigSwitcher:
 
     def setup_ui(self):
         """设置用户界面"""
-        # 状态栏（固定在底部）
-        self.status_label = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)
-        self.status_label.pack(side='bottom', fill='x', padx=10, pady=(0, 6))
+        self._setup_theme()
 
-        # 底部按钮区域（固定在状态栏上方）
-        button_frame = ttk.Frame(self.root)
-        button_frame.pack(side='bottom', fill='x', padx=10, pady=(4, 2))
-        ttk.Button(button_frame, text="刷新配置", command=self.reload_all_configs).pack(side='left', padx=5)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
+
+        # 顶部标题区
+        header = ttk.Frame(self.root, style='Header.TFrame', padding=(22, 18, 22, 12))
+        header.grid(row=0, column=0, sticky='ew')
+        header.columnconfigure(0, weight=1)
+
+        title = ttk.Label(header, text="cc-config-sync", style='Title.TLabel')
+        title.grid(row=0, column=0, sticky='w')
+        subtitle = ttk.Label(
+            header,
+            text="统一管理 Codex / Claude 供应商配置，并按需同步 Windows 与 WSL",
+            style='Muted.TLabel',
+        )
+        subtitle.grid(row=1, column=0, sticky='w', pady=(4, 0))
+
+        ttk.Button(header, text="刷新配置", command=self.reload_all_configs).grid(row=0, column=1, rowspan=2, sticky='e')
 
         # 创建 Notebook (标签页)
         notebook = ttk.Notebook(self.root)
-        notebook.pack(side='top', fill='both', expand=True, padx=10, pady=10)
+        notebook.grid(row=1, column=0, sticky='nsew', padx=18, pady=(0, 12))
 
         # Codex 配置标签页
         codex_frame = ttk.Frame(notebook)
@@ -366,6 +429,37 @@ class ConfigSwitcher:
         claude_frame = ttk.Frame(notebook)
         notebook.add(claude_frame, text='Claude 配置')
         self.setup_claude_tab(claude_frame)
+
+        # 状态栏（固定在底部）
+        status_bar = ttk.Frame(self.root, style='Status.TFrame', padding=(18, 0, 18, 10))
+        status_bar.grid(row=2, column=0, sticky='ew')
+        status_bar.columnconfigure(0, weight=1)
+        self.status_label = ttk.Label(status_bar, text="就绪", anchor=tk.W, style='Status.TLabel')
+        self.status_label.grid(row=0, column=0, sticky='ew')
+
+    def _setup_theme(self):
+        style = ttk.Style()
+        if not self.theme_available:
+            try:
+                style.theme_use('clam')
+            except tk.TclError:
+                pass
+
+        self.root.configure(bg='#f6f8fb')
+        font_family = 'Microsoft YaHei UI'
+        self.root.option_add('*Font', (font_family, 10))
+
+        style.configure('Header.TFrame', background='#f6f8fb')
+        style.configure('Status.TFrame', background='#f6f8fb')
+        style.configure('Title.TLabel', background='#f6f8fb', foreground='#1f2937', font=(font_family, 18, 'bold'))
+        style.configure('Muted.TLabel', background='#f6f8fb', foreground='#64748b')
+        style.configure('Status.TLabel', background='#f6f8fb', foreground='#475569')
+        style.configure('Applied.TLabel', foreground='#047857')
+        style.configure('Danger.TButton', foreground='#b91c1c')
+        style.configure('TLabelframe', borderwidth=1, relief='solid')
+        style.configure('TLabelframe.Label', foreground='#334155', font=(font_family, 10, 'bold'))
+        style.configure('TNotebook', background='#f6f8fb', borderwidth=0)
+        style.configure('TNotebook.Tab', padding=(16, 8))
 
     def _normalize_codex_provider(self, provider: Dict[str, Any]) -> Dict[str, Any]:
         """规范化 Codex 供应商配置"""
@@ -428,6 +522,40 @@ class ConfigSwitcher:
             ):
                 return name
         return None
+
+    def _detect_codex_active_provider_from_config(self, data: Dict[str, Any]) -> Optional[str]:
+        if not isinstance(data, dict):
+            return None
+        current_provider = data.get('model_provider', '')
+        if not current_provider:
+            return None
+        top_level_model = data.get('model', '') if isinstance(data.get('model', ''), str) else ''
+        if current_provider == self.codex_runtime_provider_alias:
+            runtime_config = (data.get('model_providers') or {}).get(self.codex_runtime_provider_alias, {})
+            return self._match_codex_active_provider_from_runtime(runtime_config, top_level_model)
+        return current_provider if isinstance(current_provider, str) else None
+
+    def _detect_codex_active_provider_windows(self) -> Optional[str]:
+        try:
+            if not self.codex_config_path.exists():
+                return None
+            data = toml.load(self.codex_config_path)
+            return self._detect_codex_active_provider_from_config(data)
+        except Exception as e:
+            print(f"检测 Windows 侧 Codex 供应商失败: {e}")
+            return None
+
+    def _detect_codex_active_provider_wsl(self) -> Optional[str]:
+        if not self.wsl_home:
+            return None
+        try:
+            data = self._read_wsl_toml(f"{self.wsl_home}/.codex/config.toml")
+            if not data:
+                return None
+            return self._detect_codex_active_provider_from_config(data)
+        except Exception as e:
+            print(f"检测 WSL 侧 Codex 供应商失败: {e}")
+            return None
 
     def _apply_codex_runtime_provider(
         self,
@@ -576,7 +704,7 @@ class ConfigSwitcher:
                     if stored_selected in self.codex_providers:
                         self.codex_selected_provider = stored_selected
                     elif stored_active in self.codex_providers:
-                        # 兼容旧版本：last_active 过去同时承担“当前选中项”的含义
+                        # 兼容旧版本：last_active 过去同时承担"当前选中项"的含义
                         self.codex_selected_provider = stored_active
                     if claude.get('last_active') in self.claude_profiles:
                         self.claude_active_profile = claude.get('last_active')
@@ -684,17 +812,64 @@ class ConfigSwitcher:
             self.claude_active_profile = claude_names[0]
 
         self._update_codex_applied_label()
+        self._update_claude_applied_label()
 
     def _update_codex_applied_label(self):
         """刷新 Codex 当前已应用/当前编辑的提示文本"""
         if not hasattr(self, 'codex_applied_var'):
             return
 
-        applied_name = self.codex_active_provider or '未应用'
-        text = f'当前已应用: {applied_name}'
-        if self.codex_selected_provider and self.codex_selected_provider != self.codex_active_provider:
+        windows_name = self._detect_codex_active_provider_windows()
+        windows_text = windows_name or '未应用'
+        if not self.wsl_home:
+            wsl_text = '不可用'
+        else:
+            wsl_name = self._detect_codex_active_provider_wsl()
+            wsl_text = wsl_name if wsl_name else '未应用'
+
+        text = f'Windows: {windows_text}    WSL: {wsl_text}'
+        if self.codex_selected_provider:
             text += f'    当前编辑: {self.codex_selected_provider}'
         self.codex_applied_var.set(text)
+
+        if windows_name and windows_name in self.codex_providers:
+            self.codex_active_provider = windows_name
+
+    def _update_claude_applied_label(self):
+        if not hasattr(self, 'claude_applied_var'):
+            return
+
+        win_result = self._detect_claude_active_profile_windows()
+        if win_result is None:
+            windows_text = '未应用'
+        else:
+            matched, has_env = win_result
+            if not has_env:
+                windows_text = '未应用'
+            elif matched:
+                windows_text = matched
+            else:
+                windows_text = '未匹配'
+
+        if not self.wsl_home:
+            wsl_text = '不可用'
+        else:
+            wsl_result = self._detect_claude_active_profile_wsl()
+            if wsl_result is None:
+                wsl_text = '未应用'
+            else:
+                matched, has_env = wsl_result
+                if not has_env:
+                    wsl_text = '未应用'
+                elif matched:
+                    wsl_text = matched
+                else:
+                    wsl_text = '未匹配'
+
+        text = f'Windows: {windows_text}    WSL: {wsl_text}'
+        if self.claude_active_profile:
+            text += f'    当前编辑: {self.claude_active_profile}'
+        self.claude_applied_var.set(text)
 
     def _capture_current_codex_provider(self) -> Dict[str, Any]:
         """从 UI 捕获当前 Codex 供应商配置"""
@@ -766,6 +941,7 @@ class ConfigSwitcher:
             return
         self.claude_active_profile = name
         self._load_claude_profile_to_ui(name)
+        self._update_claude_applied_label()
         try:
             self._persist_profiles()
         except Exception as e:
@@ -856,7 +1032,7 @@ class ConfigSwitcher:
             self._persist_profiles()
             self._update_codex_applied_label()
 
-            messagebox.showinfo('成功', f'供应商"{provider_name}"已保存到 config.toml。\n当前运行配置未切换，如需生效请点击“应用该供应商”。')
+            messagebox.showinfo('成功', f'供应商"{provider_name}"已保存到 config.toml。\n当前运行配置未切换，如需生效请点击"应用该供应商"。')
             self.set_status(f'已保存 Codex 供应商定义: {provider_name}')
 
         except Exception as e:
@@ -957,6 +1133,37 @@ class ConfigSwitcher:
             messagebox.showerror('错误', f'删除供应商失败:\n{e}')
             self.set_status(f'删除供应商失败: {e}', 'error')
 
+    def _apply_codex_provider_to_windows(self, provider_name: str, provider: Dict[str, Any]):
+        if self.codex_config_path.exists():
+            data = toml.load(self.codex_config_path)
+        else:
+            self.codex_dir.mkdir(parents=True, exist_ok=True)
+            data = {}
+
+        if 'model_providers' not in data:
+            data['model_providers'] = {}
+
+        existing_provider = data['model_providers'].get(provider_name, {})
+        data['model_providers'][provider_name] = self._build_codex_provider_entry(
+            provider_name,
+            provider,
+            existing_provider,
+        )
+
+        self._apply_codex_runtime_provider(data, provider_name, provider)
+
+        if self.codex_config_path.exists():
+            shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
+        self._write_codex_config(data)
+
+        self._update_codex_auth_basic(provider.get('api_key', ''))
+
+    def _apply_codex_provider_to_wsl(self, provider_name: str, provider: Dict[str, Any]):
+        if not self.wsl_home:
+            return
+        self.sync_codex_config_to_wsl_for_apply(provider_name, provider)
+        self.sync_codex_auth_to_wsl(provider.get('api_key', ''))
+
     def switch_codex_provider(self):
         """切换 Codex 供应商（修改 model_provider 字段）"""
         provider_name = self.codex_provider_var.get().strip()
@@ -973,38 +1180,8 @@ class ConfigSwitcher:
         provider = self._normalize_codex_provider(self._capture_current_codex_provider())
 
         try:
-            # 1. 读取现有 config.toml
-            if self.codex_config_path.exists():
-                data = toml.load(self.codex_config_path)
-            else:
-                self.codex_dir.mkdir(parents=True, exist_ok=True)
-                data = {}
-
-            # 2. 先保存当前供应商定义（不包含 API key）
-            if 'model_providers' not in data:
-                data['model_providers'] = {}
-
-            existing_provider = data['model_providers'].get(provider_name, {})
-            data['model_providers'][provider_name] = self._build_codex_provider_entry(
-                provider_name,
-                provider,
-                existing_provider,
-            )
-
-            # 3. 使用固定运行别名应用当前供应商，保证 Codex 会话列表共享
-            self._apply_codex_runtime_provider(data, provider_name, provider)
-
-            # 5. 备份并保存
-            if self.codex_config_path.exists():
-                shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
-            self._write_codex_config(data)
-
-            # 6. 更新 auth.json 中的 API Key
-            self._update_codex_auth_basic(provider.get('api_key', ''))
-
-            # 7. 同步到 WSL
-            self.sync_codex_config_to_wsl_for_apply(provider_name, provider)
-            self.sync_codex_auth_to_wsl(provider.get('api_key', ''))
+            self._apply_codex_provider_to_windows(provider_name, provider)
+            self._apply_codex_provider_to_wsl(provider_name, provider)
 
             self.codex_providers[provider_name] = provider
             self.codex_active_provider = provider_name
@@ -1021,6 +1198,62 @@ class ConfigSwitcher:
         except Exception as e:
             messagebox.showerror('错误', f'切换供应商失败:\n{e}')
             self.set_status(f'切换供应商失败: {e}', 'error')
+
+    def switch_codex_provider_windows_only(self):
+        provider_name = self.codex_provider_var.get().strip()
+        if not provider_name or provider_name not in self.codex_providers:
+            messagebox.showerror('错误', '请先选择一个 Codex 供应商。')
+            return
+        if self._is_codex_runtime_provider_alias(provider_name):
+            messagebox.showerror('错误', '该内部运行供应商不能直接应用。')
+            return
+        if not messagebox.askyesno('确认', f'仅将 Codex 供应商"{provider_name}"应用到 Windows 侧？\n此操作不会修改 WSL 配置。'):
+            return
+
+        provider = self._normalize_codex_provider(self._capture_current_codex_provider())
+        try:
+            self._apply_codex_provider_to_windows(provider_name, provider)
+            self.codex_providers[provider_name] = provider
+            self.codex_active_provider = provider_name
+            self.codex_selected_provider = provider_name
+            self._persist_profiles()
+            self._load_codex_provider_to_ui(provider_name)
+            self._update_codex_applied_label()
+
+            messagebox.showinfo('成功', f'已仅将 Codex 供应商"{provider_name}"应用到 Windows 侧。')
+            self.set_status(f'已仅应用到 Windows 侧 Codex 供应商: {provider_name}')
+            self.load_configs()
+            self._update_codex_applied_label()
+        except Exception as e:
+            messagebox.showerror('错误', f'应用到 Windows 失败:\n{e}')
+            self.set_status(f'应用到 Windows 失败: {e}', 'error')
+
+    def switch_codex_provider_wsl_only(self):
+        provider_name = self.codex_provider_var.get().strip()
+        if not provider_name or provider_name not in self.codex_providers:
+            messagebox.showerror('错误', '请先选择一个 Codex 供应商。')
+            return
+        if self._is_codex_runtime_provider_alias(provider_name):
+            messagebox.showerror('错误', '该内部运行供应商不能直接应用。')
+            return
+        if not self.wsl_home:
+            messagebox.showwarning('提示', '未检测到 WSL 环境，无法仅应用到 WSL。')
+            return
+        if not messagebox.askyesno('确认', f'仅将 Codex 供应商"{provider_name}"应用到 WSL 侧？\n此操作不会修改 Windows 配置。'):
+            return
+
+        provider = self._normalize_codex_provider(self._capture_current_codex_provider())
+        try:
+            self.codex_providers[provider_name] = provider
+            self._persist_profiles()
+            self._apply_codex_provider_to_wsl(provider_name, provider)
+            self._update_codex_applied_label()
+
+            messagebox.showinfo('成功', f'已仅将 Codex 供应商"{provider_name}"应用到 WSL 侧。')
+            self.set_status(f'已仅应用到 WSL 侧 Codex 供应商: {provider_name}')
+        except Exception as e:
+            messagebox.showerror('错误', f'应用到 WSL 失败:\n{e}')
+            self.set_status(f'应用到 WSL 失败: {e}', 'error')
 
     def create_claude_profile(self):
         name = simpledialog.askstring('新增 Claude 供应商', '请输入 Claude 供应商名称：')
@@ -1046,7 +1279,7 @@ class ConfigSwitcher:
     def save_claude_profile(self):
         name = self.claude_profile_var.get().strip()
         if not name:
-            messagebox.showerror('错误', '请先选择一个 Claude 供应商，或点击“新增”。')
+            messagebox.showerror('错误', '请先选择一个 Claude 供应商，或点击"新增"。')
             return
 
         profile = self._normalize_claude_profile(self._capture_current_claude_profile())
@@ -1055,7 +1288,7 @@ class ConfigSwitcher:
         try:
             self._persist_profiles()
             self.set_status(f'已保存 Claude 供应商: {name}')
-            messagebox.showinfo('成功', f'Claude 供应商“{name}”已保存。')
+            messagebox.showinfo('成功', f'Claude 供应商"{name}"已保存。')
         except Exception as e:
             self.set_status(f'保存供应商失败: {e}', 'error')
             messagebox.showerror('错误', f'保存 Claude 供应商失败:\n{e}')
@@ -1064,7 +1297,7 @@ class ConfigSwitcher:
         name = self.claude_profile_var.get().strip()
         if not name or name not in self.claude_profiles:
             return
-        if not messagebox.askyesno('确认删除', f'确定要删除 Claude 供应商“{name}”吗？'):
+        if not messagebox.askyesno('确认删除', f'确定要删除 Claude 供应商"{name}"吗？'):
             return
 
         del self.claude_profiles[name]
@@ -1091,7 +1324,7 @@ class ConfigSwitcher:
         if not name or name not in self.claude_profiles:
             messagebox.showerror('错误', '请先选择一个 Claude 供应商。')
             return
-        if not messagebox.askyesno('确认应用', f'将当前输入保存到 Claude 供应商“{name}”并写入系统配置文件？'):
+        if not messagebox.askyesno('确认应用', f'将当前输入保存到 Claude 供应商"{name}"并写入系统配置文件？'):
             return
 
         profile = self._normalize_claude_profile(self._capture_current_claude_profile())
@@ -1105,135 +1338,217 @@ class ConfigSwitcher:
                 base_url=(profile.get('base_url') or '').strip(),
                 model=(profile.get('model') or '').strip(),
             )
+            self._update_claude_applied_label()
             self.set_status(f'已应用 Claude 供应商: {name}')
-            messagebox.showinfo('成功', f'Claude 供应商“{name}”已保存并应用，且已同步到 WSL（如可用）。')
+            messagebox.showinfo('成功', f'Claude 供应商"{name}"已保存并应用，且已同步到 WSL（如可用）。')
         except Exception as e:
             self.set_status(f'应用 Claude 供应商失败: {e}', 'error')
             messagebox.showerror('错误', f'应用 Claude 供应商失败:\n{e}')
 
+    def apply_claude_profile_windows_only(self):
+        name = self.claude_profile_var.get().strip()
+        if not name or name not in self.claude_profiles:
+            messagebox.showerror('错误', '请先选择一个 Claude 供应商。')
+            return
+        if not messagebox.askyesno('确认', f'仅将 Claude 供应商"{name}"应用到 Windows 侧？\n此操作不会修改 WSL 配置。'):
+            return
+
+        profile = self._normalize_claude_profile(self._capture_current_claude_profile())
+        try:
+            self.claude_profiles[name] = profile
+            self.claude_active_profile = name
+            self._persist_profiles()
+            self._apply_claude_profile_to_windows(
+                api_key=(profile.get('api_key') or '').strip(),
+                base_url=(profile.get('base_url') or '').strip(),
+                model=(profile.get('model') or '').strip(),
+            )
+            self._update_claude_applied_label()
+            self.set_status(f'已仅应用到 Windows 侧 Claude 供应商: {name}')
+            messagebox.showinfo('成功', f'已仅将 Claude 供应商"{name}"应用到 Windows 侧。')
+        except Exception as e:
+            self.set_status(f'应用到 Windows 失败: {e}', 'error')
+            messagebox.showerror('错误', f'应用到 Windows 失败:\n{e}')
+
+    def apply_claude_profile_wsl_only(self):
+        name = self.claude_profile_var.get().strip()
+        if not name or name not in self.claude_profiles:
+            messagebox.showerror('错误', '请先选择一个 Claude 供应商。')
+            return
+        if not self.wsl_home:
+            messagebox.showwarning('提示', '未检测到 WSL 环境，无法仅应用到 WSL。')
+            return
+        if not messagebox.askyesno('确认', f'仅将 Claude 供应商"{name}"应用到 WSL 侧？\n此操作不会修改 Windows 配置。'):
+            return
+
+        profile = self._normalize_claude_profile(self._capture_current_claude_profile())
+        try:
+            self.claude_profiles[name] = profile
+            self._persist_profiles()
+            self._apply_claude_profile_to_wsl(
+                api_key=(profile.get('api_key') or '').strip(),
+                base_url=(profile.get('base_url') or '').strip(),
+                model=(profile.get('model') or '').strip(),
+            )
+            self._update_claude_applied_label()
+            self.set_status(f'已仅应用到 WSL 侧 Claude 供应商: {name}')
+            messagebox.showinfo('成功', f'已仅将 Claude 供应商"{name}"应用到 WSL 侧。')
+        except Exception as e:
+            self.set_status(f'应用到 WSL 失败: {e}', 'error')
+            messagebox.showerror('错误', f'应用到 WSL 失败:\n{e}')
+
     def setup_codex_tab(self, parent):
         """设置 Codex 配置标签页"""
-        # 供应商管理
-        provider_frame = ttk.LabelFrame(parent, text="Codex 供应商管理", padding=10)
-        provider_frame.pack(fill='x', padx=10, pady=(10, 6))
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        content = ttk.Frame(parent, padding=(18, 16, 18, 18))
+        content.grid(row=0, column=0, sticky='nsew')
+        content.columnconfigure(0, weight=1)
 
-        ttk.Label(provider_frame, text="供应商：").pack(side='left')
+        provider_frame = ttk.LabelFrame(content, text="Codex 供应商", padding=(16, 12))
+        provider_frame.grid(row=0, column=0, sticky='ew')
+        provider_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(provider_frame, text="供应商").grid(row=0, column=0, sticky='w', padx=(0, 10))
         self.codex_provider_var = tk.StringVar()
-        self.codex_provider_combo = ttk.Combobox(provider_frame, textvariable=self.codex_provider_var, width=28, state="readonly")
-        self.codex_provider_combo.pack(side='left', padx=8)
+        self.codex_provider_combo = ttk.Combobox(provider_frame, textvariable=self.codex_provider_var, width=24, state="readonly")
+        self.codex_provider_combo.grid(row=0, column=1, sticky='ew')
         self.codex_provider_combo.bind("<<ComboboxSelected>>", self.on_codex_provider_selected)
 
-        ttk.Button(provider_frame, text="新增", command=self.create_codex_provider).pack(side='left', padx=4)
-        ttk.Button(provider_frame, text="保存", command=self.save_codex_provider).pack(side='left', padx=4)
-        ttk.Button(provider_frame, text="删除", command=self.delete_codex_provider).pack(side='left', padx=4)
-        ttk.Button(provider_frame, text="应用该供应商", command=self.switch_codex_provider).pack(side='left', padx=12)
+        actions = ttk.Frame(provider_frame)
+        actions.grid(row=0, column=2, sticky='e', padx=(12, 0))
+        ttk.Button(actions, text="新增", command=self.create_codex_provider).pack(side='left', padx=(0, 6))
+        ttk.Button(actions, text="保存", command=self.save_codex_provider).pack(side='left', padx=(0, 6))
+        ttk.Button(actions, text="删除", command=self.delete_codex_provider, style='Danger.TButton').pack(side='left')
+
+        apply_actions = ttk.Frame(provider_frame)
+        apply_actions.grid(row=1, column=1, columnspan=2, sticky='w', pady=(10, 0))
+        ttk.Button(apply_actions, text="应用到两端", command=self.switch_codex_provider).pack(side='left', padx=(0, 8))
+        ttk.Button(apply_actions, text="仅 Windows", command=self.switch_codex_provider_windows_only).pack(side='left', padx=(0, 8))
+        ttk.Button(apply_actions, text="仅 WSL", command=self.switch_codex_provider_wsl_only).pack(side='left')
 
         self.codex_applied_var = tk.StringVar(value='当前已应用: 未检测')
-        ttk.Label(parent, textvariable=self.codex_applied_var, foreground='darkgreen').pack(anchor='w', padx=14, pady=(0, 4))
-
-        # 说明文字
-        info_label = ttk.Label(parent, text="“保存”只更新供应商定义；“应用该供应商”会先保存当前输入，再以固定运行别名改写 ~/.codex/config.toml 与 ~/.codex/auth.json", foreground="blue")
-        info_label.pack(pady=5)
+        ttk.Label(provider_frame, textvariable=self.codex_applied_var, style='Applied.TLabel').grid(
+            row=2, column=0, columnspan=3, sticky='w', pady=(10, 0)
+        )
 
         # 配置表单
-        form_frame = ttk.LabelFrame(parent, text="供应商配置", padding=12)
-        form_frame.pack(fill='x', padx=10, pady=6)
+        form_frame = ttk.LabelFrame(content, text="连接配置", padding=(16, 14))
+        form_frame.grid(row=1, column=0, sticky='ew', pady=(14, 0))
 
-        ttk.Label(form_frame, text="Base URL:").grid(row=0, column=0, sticky='w', pady=10)
-        self.codex_baseurl = ttk.Entry(form_frame, width=60)
-        self.codex_baseurl.grid(row=0, column=1, sticky='we', padx=10, pady=10)
+        ttk.Label(form_frame, text="Base URL").grid(row=0, column=0, sticky='w', pady=9, padx=(0, 14))
+        self.codex_baseurl = ttk.Entry(form_frame, width=48)
+        self.codex_baseurl.grid(row=0, column=1, sticky='we', pady=9)
 
-        ttk.Label(form_frame, text="Model:").grid(row=1, column=0, sticky='w', pady=10)
-        self.codex_model = ttk.Entry(form_frame, width=60)
-        self.codex_model.grid(row=1, column=1, sticky='we', padx=10, pady=10)
+        ttk.Label(form_frame, text="Model").grid(row=1, column=0, sticky='w', pady=9, padx=(0, 14))
+        self.codex_model = ttk.Entry(form_frame, width=48)
+        self.codex_model.grid(row=1, column=1, sticky='we', pady=9)
 
-        ttk.Label(form_frame, text="API Key:").grid(row=2, column=0, sticky='w', pady=10)
-        self.codex_apikey = ttk.Entry(form_frame, width=60, show="*")
-        self.codex_apikey.grid(row=2, column=1, sticky='we', padx=10, pady=10)
+        ttk.Label(form_frame, text="API Key").grid(row=2, column=0, sticky='w', pady=9, padx=(0, 14))
+        self.codex_apikey = ttk.Entry(form_frame, width=48, show="*")
+        self.codex_apikey.grid(row=2, column=1, sticky='we', pady=9)
 
         show_key_var = tk.BooleanVar(value=False)
 
         def toggle_key():
             self.codex_apikey.config(show="" if show_key_var.get() else "*")
 
-        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(row=2, column=2, sticky='w')
+        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(row=2, column=2, sticky='w', padx=(12, 0))
 
         form_frame.columnconfigure(1, weight=1)
 
-        note_frame = ttk.LabelFrame(parent, text="说明", padding=10)
-        note_frame.pack(fill='x', padx=10, pady=10)
-
-        note_text = """配置项说明：
+        # 帮助按钮
+        def show_codex_help():
+            help_text = """配置项说明：
 • Base URL - 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.base_url
 • Model - 保存到 ~/.codex/config.toml 的 model_providers.<供应商>.model
-• API Key - 保存到工具内部供应商列表；点击“应用该供应商”后才写入 ~/.codex/auth.json 的 OPENAI_API_KEY
+• API Key - 保存到工具内部供应商列表；"应用到"后才写入 ~/.codex/auth.json
 
-点击“应用该供应商”会先保存当前输入，再切换到固定运行别名，以便不同供应商共享 Codex session 列表，并同步当前供应商的 API Key 到 WSL（如可用）。
-新建供应商默认会带有 wire_api="responses" 与 requires_openai_auth=true。"""
-        ttk.Label(note_frame, text=note_text, justify=tk.LEFT).pack(anchor='w')
+"应用到 → 两端"：先保存当前输入，再以固定运行别名改写 config.toml / auth.json，同步到 WSL
+"应用到 → 仅 Windows"：只修改 Windows 侧，不动 WSL
+"应用到 → 仅 WSL"：只修改 WSL 侧，不动 Windows
+新建供应商默认包含 wire_api="responses" 与 requires_openai_auth=true。"""
+            messagebox.showinfo("Codex 帮助", help_text)
+
+        ttk.Button(actions, text="?", width=3, command=show_codex_help).pack(side='left', padx=(8, 0))
 
     def setup_claude_tab(self, parent):
         """设置 Claude 配置标签页"""
-        # 供应商管理
-        provider_frame = ttk.LabelFrame(parent, text="Claude 供应商管理", padding=10)
-        provider_frame.pack(fill='x', padx=10, pady=(10, 6))
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        content = ttk.Frame(parent, padding=(18, 16, 18, 18))
+        content.grid(row=0, column=0, sticky='nsew')
+        content.columnconfigure(0, weight=1)
 
-        ttk.Label(provider_frame, text="供应商：").pack(side='left')
+        provider_frame = ttk.LabelFrame(content, text="Claude 供应商", padding=(16, 12))
+        provider_frame.grid(row=0, column=0, sticky='ew')
+        provider_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(provider_frame, text="供应商").grid(row=0, column=0, sticky='w', padx=(0, 10))
         self.claude_profile_var = tk.StringVar()
-        self.claude_profile_combo = ttk.Combobox(provider_frame, textvariable=self.claude_profile_var, width=28, state="readonly")
-        self.claude_profile_combo.pack(side='left', padx=8)
+        self.claude_profile_combo = ttk.Combobox(provider_frame, textvariable=self.claude_profile_var, width=24, state="readonly")
+        self.claude_profile_combo.grid(row=0, column=1, sticky='ew')
         self.claude_profile_combo.bind("<<ComboboxSelected>>", self.on_claude_profile_selected)
 
-        ttk.Button(provider_frame, text="新增", command=self.create_claude_profile).pack(side='left', padx=4)
-        ttk.Button(provider_frame, text="保存", command=self.save_claude_profile).pack(side='left', padx=4)
-        ttk.Button(provider_frame, text="删除", command=self.delete_claude_profile).pack(side='left', padx=4)
-        ttk.Button(provider_frame, text="应用该供应商", command=self.apply_claude_profile).pack(side='left', padx=12)
+        actions = ttk.Frame(provider_frame)
+        actions.grid(row=0, column=2, sticky='e', padx=(12, 0))
+        ttk.Button(actions, text="新增", command=self.create_claude_profile).pack(side='left', padx=(0, 6))
+        ttk.Button(actions, text="保存", command=self.save_claude_profile).pack(side='left', padx=(0, 6))
+        ttk.Button(actions, text="删除", command=self.delete_claude_profile, style='Danger.TButton').pack(side='left')
 
-        # 说明文字
-        info_label = ttk.Label(parent, text="“应用该供应商”会先保存当前输入，再修改 Claude 配置文件 (~/.claude/settings.json)", foreground="blue")
-        info_label.pack(pady=5)
+        apply_actions = ttk.Frame(provider_frame)
+        apply_actions.grid(row=1, column=1, columnspan=2, sticky='w', pady=(10, 0))
+        ttk.Button(apply_actions, text="应用到两端", command=self.apply_claude_profile).pack(side='left', padx=(0, 8))
+        ttk.Button(apply_actions, text="仅 Windows", command=self.apply_claude_profile_windows_only).pack(side='left', padx=(0, 8))
+        ttk.Button(apply_actions, text="仅 WSL", command=self.apply_claude_profile_wsl_only).pack(side='left')
+
+        self.claude_applied_var = tk.StringVar(value='当前已应用: 未检测')
+        ttk.Label(provider_frame, textvariable=self.claude_applied_var, style='Applied.TLabel').grid(
+            row=2, column=0, columnspan=3, sticky='w', pady=(10, 0)
+        )
 
         # 配置表单
-        form_frame = ttk.LabelFrame(parent, text="供应商配置", padding=12)
-        form_frame.pack(fill='x', padx=10, pady=6)
+        form_frame = ttk.LabelFrame(content, text="连接配置", padding=(16, 14))
+        form_frame.grid(row=1, column=0, sticky='ew', pady=(14, 0))
 
         # Base URL
-        ttk.Label(form_frame, text="Base URL:").grid(row=0, column=0, sticky='w', pady=10)
-        self.claude_baseurl = ttk.Entry(form_frame, width=60)
-        self.claude_baseurl.grid(row=0, column=1, sticky='we', pady=10, padx=10)
+        ttk.Label(form_frame, text="Base URL").grid(row=0, column=0, sticky='w', pady=9, padx=(0, 14))
+        self.claude_baseurl = ttk.Entry(form_frame, width=48)
+        self.claude_baseurl.grid(row=0, column=1, sticky='we', pady=9)
 
         # Model
-        ttk.Label(form_frame, text="Model:").grid(row=1, column=0, sticky='w', pady=10)
-        self.claude_model = ttk.Entry(form_frame, width=60)
-        self.claude_model.grid(row=1, column=1, sticky='we', pady=10, padx=10)
+        ttk.Label(form_frame, text="Model").grid(row=1, column=0, sticky='w', pady=9, padx=(0, 14))
+        self.claude_model = ttk.Entry(form_frame, width=48)
+        self.claude_model.grid(row=1, column=1, sticky='we', pady=9)
 
         # API Key
-        ttk.Label(form_frame, text="API Key:").grid(row=2, column=0, sticky='w', pady=10)
-        self.claude_apikey = ttk.Entry(form_frame, width=60, show="*")
-        self.claude_apikey.grid(row=2, column=1, sticky='we', pady=10, padx=10)
+        ttk.Label(form_frame, text="API Key").grid(row=2, column=0, sticky='w', pady=9, padx=(0, 14))
+        self.claude_apikey = ttk.Entry(form_frame, width=48, show="*")
+        self.claude_apikey.grid(row=2, column=1, sticky='we', pady=9)
 
         show_key_var = tk.BooleanVar(value=False)
 
         def toggle_key():
             self.claude_apikey.config(show="" if show_key_var.get() else "*")
 
-        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(row=2, column=2, sticky='w')
+        ttk.Checkbutton(form_frame, text="显示", variable=show_key_var, command=toggle_key).grid(row=2, column=2, sticky='w', padx=(12, 0))
         form_frame.columnconfigure(1, weight=1)
 
-        # 说明文字
-        note_frame = ttk.LabelFrame(parent, text="说明", padding=10)
-        note_frame.pack(fill='x', padx=10, pady=10)
-
-        note_text = """配置方式：通过 ~/.claude/settings.json 文件配置 Claude
+        # 帮助按钮
+        def show_claude_help():
+            help_text = """配置方式：通过 ~/.claude/settings.json 文件配置 Claude
 
 配置项说明：
 • API Key - 存储在 env.ANTHROPIC_AUTH_TOKEN
 • Base URL - 存储在 env.ANTHROPIC_BASE_URL（可选）
 • Model - 存储在 env.ANTHROPIC_MODEL（可选）
 
-点击“应用该供应商”会先保存当前输入，再写入 settings.json，并自动同步到 WSL（如可用）"""
+"应用到 → 两端"：先保存当前输入，再写入 settings.json，同步到 WSL
+"应用到 → 仅 Windows"：只修改 Windows 侧，不动 WSL
+"应用到 → 仅 WSL"：只修改 WSL 侧，不动 Windows"""
+            messagebox.showinfo("Claude 帮助", help_text)
 
-        ttk.Label(note_frame, text=note_text, justify=tk.LEFT).pack(anchor='w')
+        ttk.Button(actions, text="?", width=3, command=show_claude_help).pack(side='left', padx=(8, 0))
 
     def load_configs(self):
         """加载所有配置文件"""
@@ -1364,27 +1679,26 @@ class ConfigSwitcher:
             self.set_status(f"应用失败: {e}", "error")
             messagebox.showerror("错误", f"应用配置失败:\n{e}")
 
-    def _write_claude_settings(self, api_key: str, base_url: str, model: str):
-        """写入 Claude settings.json（抛出异常，由上层决定是否弹窗）"""
-        # 读取现有配置（如果存在）
+    def _apply_claude_profile_to_windows(self, api_key: str, base_url: str, model: str):
         data = self._read_json_file(self.claude_settings_path)
         data = self._merge_claude_env_into_settings(
             data,
             self._build_managed_claude_env(api_key, base_url, model),
         )
-
-        # 确保目录存在
         self.claude_dir.mkdir(parents=True, exist_ok=True)
-
-        # 备份原文件
         if self.claude_settings_path.exists():
             shutil.copy(self.claude_settings_path, str(self.claude_settings_path) + '.backup')
-
-        # 写入 Windows 侧配置
         self._write_json_file(self.claude_settings_path, data)
 
-        # 同步到 WSL
+    def _apply_claude_profile_to_wsl(self, api_key: str, base_url: str, model: str):
+        if not self.wsl_home:
+            return
         self.sync_claude_to_wsl(api_key=api_key, base_url=base_url, model=model)
+
+    def _write_claude_settings(self, api_key: str, base_url: str, model: str):
+        """写入 Claude settings.json（抛出异常，由上层决定是否弹窗）"""
+        self._apply_claude_profile_to_windows(api_key, base_url, model)
+        self._apply_claude_profile_to_wsl(api_key, base_url, model)
 
     def sync_claude_to_wsl(self, api_key: str, base_url: str, model: str):
         """同步 Claude 配置到 WSL"""
@@ -1446,8 +1760,11 @@ class ConfigSwitcher:
 
 def main():
     try:
-        print("创建 Tk 窗口...")
-        root = tk.Tk()
+        print("创建窗口...")
+        if tb is not None:
+            root = tb.Window(themename="flatly")
+        else:
+            root = tk.Tk()
         print("初始化应用...")
         app = ConfigSwitcher(root)
         print("启动主循环...")
