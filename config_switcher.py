@@ -684,6 +684,7 @@ class ConfigSwitcher:
         # Claude 配置
         self.claude_profiles = {}
         self.claude_active_profile = None
+        self.claude_selected_profile = None
 
         if self.profiles_path.exists():
             try:
@@ -725,8 +726,14 @@ class ConfigSwitcher:
                     elif stored_active in self.codex_providers:
                         # 兼容旧版本：last_active 过去同时承担"当前选中项"的含义
                         self.codex_selected_provider = stored_active
-                    if claude.get('last_active') in self.claude_profiles:
-                        self.claude_active_profile = claude.get('last_active')
+                    stored_claude_active = claude.get('last_active')
+                    if stored_claude_active in self.claude_profiles:
+                        self.claude_active_profile = stored_claude_active
+                    stored_claude_selected = claude.get('last_selected')
+                    if stored_claude_selected in self.claude_profiles:
+                        self.claude_selected_profile = stored_claude_selected
+                    elif stored_claude_active in self.claude_profiles:
+                        self.claude_selected_profile = stored_claude_active
                 else:
                     # v1 -> v2
                     raw_profiles = data.get('profiles', {}) or {}
@@ -759,6 +766,7 @@ class ConfigSwitcher:
                         self.codex_selected_provider = last_active
                     if last_active in self.claude_profiles:
                         self.claude_active_profile = last_active
+                        self.claude_selected_profile = last_active
             except Exception as e:
                 self.set_status(f'加载供应商失败: {e}', 'error')
 
@@ -771,6 +779,7 @@ class ConfigSwitcher:
         if not self.claude_profiles:
             self.claude_profiles['默认'] = self._normalize_claude_profile(self._capture_current_claude_profile())
             self.claude_active_profile = '默认'
+            self.claude_selected_profile = '默认'
 
         try:
             self._persist_profiles()
@@ -784,11 +793,11 @@ class ConfigSwitcher:
                 self.codex_provider_var.set(self.codex_selected_provider)
             if hasattr(self, 'codex_provider_list_frame'):
                 self._load_codex_provider_to_ui(self.codex_selected_provider)
-        if self.claude_active_profile in self.claude_profiles:
+        if self.claude_selected_profile in self.claude_profiles:
             if hasattr(self, 'claude_profile_var'):
-                self.claude_profile_var.set(self.claude_active_profile)
+                self.claude_profile_var.set(self.claude_selected_profile)
             if hasattr(self, 'claude_provider_list_frame'):
-                self._load_claude_profile_to_ui(self.claude_active_profile)
+                self._load_claude_profile_to_ui(self.claude_selected_profile)
 
         self._update_codex_applied_label()
 
@@ -808,6 +817,7 @@ class ConfigSwitcher:
             },
             'claude': {
                 'last_active': self.claude_active_profile,
+                'last_selected': self.claude_selected_profile,
                 'profiles': self.claude_profiles,
             },
         }
@@ -827,8 +837,11 @@ class ConfigSwitcher:
         claude_names = sorted(self.claude_profiles.keys())
         if hasattr(self, 'claude_provider_list_frame'):
             self._rebuild_claude_provider_list()
-        if not self.claude_active_profile and claude_names:
-            self.claude_active_profile = claude_names[0]
+        if claude_names and self.claude_selected_profile not in claude_names:
+            if self.claude_active_profile in claude_names:
+                self.claude_selected_profile = self.claude_active_profile
+            else:
+                self.claude_selected_profile = claude_names[0]
 
         self._update_codex_applied_label()
         self._update_claude_applied_label()
@@ -975,9 +988,10 @@ class ConfigSwitcher:
         name = self.claude_profile_var.get().strip()
         if not name or name not in self.claude_profiles:
             return
-        self.claude_active_profile = name
+        self.claude_selected_profile = name
         self._load_claude_profile_to_ui(name)
         self._update_claude_applied_label()
+        self._highlight_claude_provider_list()
         try:
             self._persist_profiles()
         except Exception as e:
@@ -1321,6 +1335,7 @@ class ConfigSwitcher:
 
         self.claude_profiles[name] = self._normalize_claude_profile(self._capture_current_claude_profile())
         self.claude_active_profile = name
+        self.claude_selected_profile = name
         self._refresh_profiles_ui()
         self.claude_profile_var.set(name)
         try:
@@ -1338,6 +1353,7 @@ class ConfigSwitcher:
         profile = self._normalize_claude_profile(self._capture_current_claude_profile())
         self.claude_profiles[name] = profile
         self.claude_active_profile = name
+        self.claude_selected_profile = name
         try:
             self._persist_profiles()
             self.set_status(f'已保存 Claude 供应商: {name}')
@@ -1356,13 +1372,15 @@ class ConfigSwitcher:
         del self.claude_profiles[name]
         if self.claude_active_profile == name:
             self.claude_active_profile = None
+        if self.claude_selected_profile == name:
+            self.claude_selected_profile = None
 
         self._refresh_profiles_ui()
         values = sorted(self.claude_profiles.keys())
         if values:
-            self.claude_active_profile = values[0]
-            self.claude_profile_var.set(self.claude_active_profile)
-            self._load_claude_profile_to_ui(self.claude_active_profile)
+            self.claude_selected_profile = values[0]
+            self.claude_profile_var.set(self.claude_selected_profile)
+            self._load_claude_profile_to_ui(self.claude_selected_profile)
         else:
             self.claude_profile_var.set('')
 
@@ -1385,6 +1403,7 @@ class ConfigSwitcher:
         try:
             self.claude_profiles[name] = profile
             self.claude_active_profile = name
+            self.claude_selected_profile = name
             self._persist_profiles()
             self._write_claude_settings(
                 api_key=(profile.get('api_key') or '').strip(),
@@ -1410,6 +1429,7 @@ class ConfigSwitcher:
         try:
             self.claude_profiles[name] = profile
             self.claude_active_profile = name
+            self.claude_selected_profile = name
             self._persist_profiles()
             self._apply_claude_profile_to_windows(
                 api_key=(profile.get('api_key') or '').strip(),
@@ -1917,7 +1937,7 @@ class ConfigSwitcher:
         font_family = 'Microsoft YaHei UI'
 
         for name in names:
-            is_selected = (name == self.claude_active_profile)
+            is_selected = (name == self.claude_selected_profile)
             is_applied = (name == self.claude_active_profile)
             bg = '#e0f2fe' if is_selected else '#ffffff'
 
@@ -1956,7 +1976,7 @@ class ConfigSwitcher:
     def _highlight_claude_provider_list(self):
         """仅更新列表项高亮状态，不重建 widget"""
         for name, w in self.claude_list_items.items():
-            is_selected = (name == self.claude_active_profile)
+            is_selected = (name == self.claude_selected_profile)
             is_applied = (name == self.claude_active_profile)
             bg = '#e0f2fe' if is_selected else '#ffffff'
 
@@ -1982,7 +2002,7 @@ class ConfigSwitcher:
         if name not in self.claude_profiles:
             return
         self.claude_profile_var.set(name)
-        self.claude_active_profile = name
+        self.claude_selected_profile = name
         self._load_claude_profile_to_ui(name)
         self._update_claude_applied_label()
         self._highlight_claude_provider_list()
