@@ -53,8 +53,8 @@ python config_switcher.py
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --noconsole --name ccPivot config_switcher.py
-# 构建产物在 dist/ccPivot.exe
+pyinstaller --onefile --windowed --name=ccPivot --add-data="ccPivot.ico;." --add-data="ccPivot.png;." --icon=ccPivot.ico config_switcher.py
+# 构建产物在 dist/ccPivot.exe，需手动复制到根目录替换旧 exe
 ```
 
 ## 功能概览
@@ -63,6 +63,7 @@ pyinstaller --onefile --noconsole --name ccPivot config_switcher.py
 |------|-------|--------|
 | 供应商 CRUD | ✓ | ✓ |
 | Base URL / Model / API Key 配置 | ✓ | ✓ |
+| API 可用性探针 | ✓ | ✓ |
 | 应用到 Windows | ✓ | ✓ |
 | 应用到 WSL | ✓ | ✓ |
 | 两端同步 | ✓ | ✓ |
@@ -87,6 +88,14 @@ pyinstaller --onefile --noconsole --name ccPivot config_switcher.py
 1. 切换到「Claude 配置」标签页
 2. 操作方式与 Codex 标签页一致
 3. 配置直接写入 `settings.json` 的 `env` 段落
+
+### API 可用性探针
+
+每个供应商的「连接配置」区域都有一个「探针」按钮，用于快速检测 API 端点是否可用：
+
+1. 选中供应商并填写 Base URL / Model / API Key（或从已保存档案中加载）
+2. 点击「探针」按钮，程序自动判断使用 OpenAI 格式还是 Anthropic 格式发送测试请求
+3. 结果直接显示在底部状态栏，无需弹窗干扰
 
 ### 同步选项
 

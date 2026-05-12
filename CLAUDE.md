@@ -186,6 +186,8 @@ pyinstaller --onefile --windowed --name=ccPivot \
 
 ## 变更注意事项
 
+- **每次新增特性或功能变动后，必须同步更新 README.md** — 功能概览表格、使用指南章节均需保持与实际功能一致
+- **界面元素（按钮、标签、布局）有变更后，必须更新 `docs/screenshot.png`** — 截图需覆盖所有标签页，确保完整展示所有预期元素（按钮、状态卡片、供应商列表等）
 - **不要引入新的第三方依赖** — 只依赖标准库 + `toml` + `ttkbootstrap`(可选)。`ttkbootstrap` 缺失时自动降级到 `clam` 主题
 - **不要改 providers.json 的顶层结构** — `version`/`codex`/`claude` 的 key 结构向后兼容 v1/v2，改动需同步更新 `load_profiles()` 和 `_persist_profiles()`
 - **Codex 供应商的 `api_key` 不写入 config.toml** — 只存在 providers.json 和 auth.json（auth.json 只在"应用"时写入 `OPENAI_API_KEY`）
