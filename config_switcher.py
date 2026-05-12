@@ -2210,10 +2210,12 @@ class ConfigSwitcher:
         def _do_probe():
             try:
                 if format_type == 'openai':
-                    url = f'{base_url}/v1/responses'
+                    url = f'{base_url}/v1/chat/completions'
                     payload = json.dumps({
                         'model': model,
-                        'input': 'just say hi, nothing else',
+                        'messages': [
+                            {'role': 'user', 'content': 'just say hi, nothing else'},
+                        ],
                     }).encode('utf-8')
                     headers = {
                         'Content-Type': 'application/json',
@@ -2255,14 +2257,11 @@ class ConfigSwitcher:
                     if format_type == 'openai':
                         reply = ''
                         if isinstance(body, dict):
-                            outputs = body.get('output', [])
-                            if outputs and isinstance(outputs, list):
-                                first = outputs[0]
-                                if isinstance(first, dict):
-                                    for item in first.get('content', []):
-                                        if isinstance(item, dict) and item.get('type') == 'output_text':
-                                            reply = item.get('text', '')
-                                            break
+                            choices = body.get('choices', [])
+                            if choices and isinstance(choices, list):
+                                msg = choices[0].get('message', {})
+                                if isinstance(msg, dict):
+                                    reply = (msg.get('content') or '').strip()
                         if reply:
                             info_parts.append(f'回复: {reply}')
                         info_parts.append(f'Model: {body.get("model", model) if isinstance(body, dict) else model}')

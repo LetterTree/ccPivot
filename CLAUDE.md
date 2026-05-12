@@ -130,11 +130,11 @@ Headers: x-api-key, anthropic-version: 2023-06-01, anthropic-dangerous-direct-br
 Body: {model, max_tokens: 64, messages: [{role:"user", content:"just say hi, nothing else"}]}
 ```
 
-**OpenAI 格式** (`/v1/responses`)：
+**OpenAI 格式** (`/v1/chat/completions`)：
 ```
-POST {base_url}/v1/responses
+POST {base_url}/v1/chat/completions
 Headers: Authorization: Bearer {api_key}
-Body: {model, input: "just say hi, nothing else"}
+Body: {model, messages: [{role:"user", content:"just say hi, nothing else"}]}
 ```
 
 两种格式都带 `User-Agent: ccPivot/1.0`，防止 Cloudflare 等反爬拦截。
