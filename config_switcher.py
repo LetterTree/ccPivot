@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import shutil
 import sys
+import urllib.request
+import urllib.error
+import threading
+import time
 
 try:
     import ttkbootstrap as tb
@@ -1046,9 +1050,19 @@ class ConfigSwitcher:
                 shutil.copy(self.codex_config_path, str(self.codex_config_path) + '.backup')
             self._write_codex_config(data)
 
-            # 5. 同步到 WSL
+            # 5. 同步到 WSL（只合并 provider 定义，不覆盖整个文件）
             if self.wsl_home:
-                self._write_wsl_toml(f"{self.wsl_home}/.codex/config.toml", data)
+                wsl_target = f"{self.wsl_home}/.codex/config.toml"
+                wsl_data = self._read_wsl_toml(wsl_target)
+                if 'model_providers' not in wsl_data:
+                    wsl_data['model_providers'] = {}
+                existing_wsl = wsl_data['model_providers'].get(provider_name, {})
+                wsl_data['model_providers'][provider_name] = self._build_codex_provider_entry(
+                    provider_name,
+                    provider_config,
+                    existing_wsl,
+                )
+                self._write_wsl_toml(wsl_target, wsl_data)
 
             # 6. 更新内存中的供应商列表
             self.codex_providers[provider_name] = provider_config
@@ -1128,7 +1142,14 @@ class ConfigSwitcher:
                     self._write_codex_config(data)
 
                     if self.wsl_home:
-                        self._write_wsl_toml(f"{self.wsl_home}/.codex/config.toml", data)
+                        wsl_target = f"{self.wsl_home}/.codex/config.toml"
+                        wsl_data = self._read_wsl_toml(wsl_target)
+                        if 'model_providers' in wsl_data and provider_name in wsl_data['model_providers']:
+                            del wsl_data['model_providers'][provider_name]
+                            if not wsl_data['model_providers']:
+                                wsl_data.pop('model_providers', None)
+                        self._clear_codex_runtime_provider(wsl_data)
+                        self._write_wsl_toml(wsl_target, wsl_data)
 
             # 2. 从内存删除
             if provider_name in self.codex_providers:
@@ -1555,6 +1576,8 @@ class ConfigSwitcher:
 
         ttk.Button(form_actions, text="? 帮助", width=7, command=show_codex_help).pack(side='left', padx=(0, 8))
         ttk.Button(form_actions, text="保存", command=self.save_codex_provider).pack(side='left')
+        self.codex_probe_btn = ttk.Button(form_actions, text="探针", command=self.probe_codex_provider)
+        self.codex_probe_btn.pack(side='left', padx=(8, 0))
 
         ttk.Separator(right_panel, orient='horizontal').pack(fill='x', pady=(14, 14))
 
@@ -1827,6 +1850,8 @@ class ConfigSwitcher:
 
         ttk.Button(form_actions, text="? 帮助", width=7, command=show_claude_help).pack(side='left', padx=(0, 8))
         ttk.Button(form_actions, text="保存", command=self.save_claude_profile).pack(side='left')
+        self.claude_probe_btn = ttk.Button(form_actions, text="探针", command=self.probe_claude_profile)
+        self.claude_probe_btn.pack(side='left', padx=(8, 0))
 
         ttk.Separator(right_panel, orient='horizontal').pack(fill='x', pady=(14, 14))
 
@@ -2158,6 +2183,174 @@ class ConfigSwitcher:
                     raise Exception(f"同步失败: {result.stderr}")
         except Exception as e:
             print(f"同步 {filename} 到 WSL 失败: {e}")
+
+    def _probe_endpoint(self, base_url: str, model: str, api_key: str, format_type: str, callback):
+        """在后台线程中探测 API 端点可用性
+
+        format_type: 'claude' 使用 Anthropic Messages API, 'openai' 使用 OpenAI Responses API
+        callback 会在主线程中被调用，参数为 (success: bool, message: str)
+        """
+        model = (model or '').strip()
+        api_key = (api_key or '').strip()
+
+        # 规范化 base_url: 去掉末尾 /v1 避免重复，然后统一拼接 /v1/messages 或 /v1/responses
+        base_url = (base_url or '').strip().rstrip('/')
+        if base_url.endswith('/v1'):
+            base_url = base_url[:-3]
+
+        if not base_url:
+            callback(False, 'Base URL 为空，无法探测')
+            return
+        if not model:
+            callback(False, 'Model 为空，无法探测')
+            return
+        if not api_key:
+            callback(False, 'API Key 为空，无法探测')
+
+        def _do_probe():
+            try:
+                if format_type == 'openai':
+                    url = f'{base_url}/v1/responses'
+                    payload = json.dumps({
+                        'model': model,
+                        'input': 'just say hi, nothing else',
+                    }).encode('utf-8')
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': f'Bearer {api_key}',
+                        'User-Agent': 'ccPivot/1.0',
+                    }
+                else:
+                    url = f'{base_url}/v1/messages'
+                    payload = json.dumps({
+                        'model': model,
+                        'max_tokens': 64,
+                        'metadata': {
+                            'user_id': '{"device_id":"ccPivot-probe"}',
+                        },
+                        'messages': [
+                            {'role': 'user', 'content': 'just say hi, nothing else'},
+                        ],
+                    }).encode('utf-8')
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'x-api-key': api_key,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true',
+                        'User-Agent': 'ccPivot/1.0',
+                    }
+
+                req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
+                start = time.time()
+                resp = urllib.request.urlopen(req, timeout=15)
+                elapsed_ms = int((time.time() - start) * 1000)
+
+                raw = resp.read().decode('utf-8', errors='replace')
+                body = json.loads(raw) if raw else {}
+
+                status_code = resp.getcode()
+                if 200 <= status_code < 300:
+                    info_parts = [f'状态码: {status_code}', f'耗时: {elapsed_ms}ms']
+
+                    if format_type == 'openai':
+                        reply = ''
+                        if isinstance(body, dict):
+                            outputs = body.get('output', [])
+                            if outputs and isinstance(outputs, list):
+                                first = outputs[0]
+                                if isinstance(first, dict):
+                                    for item in first.get('content', []):
+                                        if isinstance(item, dict) and item.get('type') == 'output_text':
+                                            reply = item.get('text', '')
+                                            break
+                        if reply:
+                            info_parts.append(f'回复: {reply}')
+                        info_parts.append(f'Model: {body.get("model", model) if isinstance(body, dict) else model}')
+                    else:
+                        reply = ''
+                        if isinstance(body, dict):
+                            for msg in body.get('content', []):
+                                if isinstance(msg, dict) and msg.get('type') == 'text':
+                                    reply = msg.get('text', '')
+                                    break
+                        if reply:
+                            info_parts.append(f'回复: {reply}')
+                        info_parts.append(f'Model: {body.get("model", model) if isinstance(body, dict) else model}')
+
+                    callback(True, ' | '.join(info_parts))
+                else:
+                    callback(False, f'状态码: {status_code}')
+
+            except urllib.error.HTTPError as e:
+                try:
+                    err_body = e.read().decode('utf-8', errors='replace')[:200]
+                except Exception:
+                    err_body = ''
+                callback(False, f'HTTP {e.code}: {err_body}')
+            except urllib.error.URLError as e:
+                callback(False, f'网络错误: {e.reason}')
+            except Exception as e:
+                callback(False, f'异常: {e}')
+
+        thread = threading.Thread(target=_do_probe, daemon=True)
+        thread.start()
+
+    def _on_probe_codex_result(self, success: bool, message: str):
+        """Codex 探针回调（主线程）"""
+        self.root.after(0, lambda: self._show_probe_result(success, message, self.codex_probe_btn, 'Codex'))
+
+    def _on_probe_claude_result(self, success: bool, message: str):
+        """Claude 探针回调（主线程）"""
+        self.root.after(0, lambda: self._show_probe_result(success, message, self.claude_probe_btn, 'Claude'))
+
+    def _show_probe_result(self, success: bool, message: str, probe_btn, label: str):
+        """在主线程中显示探针结果（状态栏）"""
+        probe_btn.config(text='探针', state='normal')
+        if success:
+            self.set_status(f'[{label} 探针] ✓ {message}')
+        else:
+            self.set_status(f'[{label} 探针] ✗ {message}', 'error')
+
+    def probe_codex_provider(self):
+        """探测当前 Codex 供应商的 API 可用性"""
+        provider_name = self.codex_provider_var.get().strip()
+        if not provider_name:
+            self.set_status('请先选择或创建一个 Codex 供应商', 'error')
+            return
+
+        base_url = self.codex_baseurl.get().strip()
+        model = self.codex_model.get().strip()
+        api_key = self.codex_apikey.get().strip()
+
+        if not api_key and provider_name in self.codex_providers:
+            api_key = self.codex_providers[provider_name].get('api_key', '')
+
+        # 判断格式: wire_api='messages' → Claude 格式, 否则 OpenAI 格式
+        provider_config = self.codex_providers.get(provider_name, {})
+        wire_api = provider_config.get('wire_api', 'responses')
+        format_type = 'claude' if wire_api == 'messages' else 'openai'
+
+        self.codex_probe_btn.config(text='探测中...', state='disabled')
+        self.set_status(f'正在探测 Codex 供应商 "{provider_name}" ...')
+        self._probe_endpoint(base_url, model, api_key, format_type, self._on_probe_codex_result)
+
+    def probe_claude_profile(self):
+        """探测当前 Claude 供应商的 API 可用性"""
+        name = self.claude_profile_var.get().strip()
+        if not name:
+            self.set_status('请先选择或创建一个 Claude 供应商', 'error')
+            return
+
+        base_url = self.claude_baseurl.get().strip()
+        model = self.claude_model.get().strip()
+        api_key = self.claude_apikey.get().strip()
+
+        if not api_key and name in self.claude_profiles:
+            api_key = self.claude_profiles[name].get('api_key', '')
+
+        self.claude_probe_btn.config(text='探测中...', state='disabled')
+        self.set_status(f'正在探测 Claude 供应商 "{name}" ...')
+        self._probe_endpoint(base_url, model, api_key, 'claude', self._on_probe_claude_result)
 
     def set_status(self, message: str, level: str = "info"):
         """设置状态栏消息"""
