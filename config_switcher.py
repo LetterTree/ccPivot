@@ -32,6 +32,9 @@ class ConfigSwitcher:
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
     )
 
     def __init__(self, root):
@@ -221,6 +224,9 @@ class ConfigSwitcher:
             'ANTHROPIC_AUTH_TOKEN': api_key,
             'ANTHROPIC_BASE_URL': base_url,
             'ANTHROPIC_MODEL': model,
+            'ANTHROPIC_DEFAULT_HAIKU_MODEL': model,
+            'ANTHROPIC_DEFAULT_SONNET_MODEL': model,
+            'ANTHROPIC_DEFAULT_OPUS_MODEL': model,
         }
 
     def _merge_claude_env_into_settings(

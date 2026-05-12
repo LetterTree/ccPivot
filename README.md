@@ -83,7 +83,7 @@ pyinstaller --onefile --windowed --name=ccPivot --add-data="ccPivot.ico;." --add
 
 ### Claude 配置
 
-管理 `~/.claude/settings.json` 的 `env` 字段 (`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`)：
+管理 `~/.claude/settings.json` 的 `env` 字段（`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`），同时自动将 Model 值同步写入 `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL`：
 
 1. 切换到「Claude 配置」标签页
 2. 操作方式与 Codex 标签页一致

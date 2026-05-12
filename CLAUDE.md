@@ -44,7 +44,10 @@ requires_openai_auth = true     # true→Bearer Auth, false→x-api-key Auth
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "sk-...",
     "ANTHROPIC_BASE_URL": "https://api.example.com",
-    "ANTHROPIC_MODEL": "claude-opus-4-7"
+    "ANTHROPIC_MODEL": "claude-opus-4-7",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-4-7",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-4-7",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-7"
   }
 }
 ```
