@@ -1,0 +1,64 @@
+<h2>方案 B：左右分栏 — 列表 + 表单</h2>
+<p class="subtitle">左侧供应商列表区（含增删），右侧配置表单 + 应用按钮</p>
+
+<div class="mockup">
+  <div class="mockup-header">Codex 配置 标签页 — 方案 B</div>
+  <div class="mockup-body" style="font-family: 'Microsoft YaHei UI', sans-serif; font-size: 13px; color: #1e293b; display: flex; gap: 16px;">
+
+    <!-- Left: Supplier list -->
+    <div style="width: 200px; flex-shrink: 0; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc;">
+      <div style="font-weight: 600; color: #334155; margin-bottom: 8px;">📦 供应商列表</div>
+      <div style="border:1px solid #d1d5db; border-radius:4px; background:#fff; margin-bottom:8px;">
+        <div style="padding:6px 10px; background:#e0f2fe; color:#0369a1; font-weight:600;">● openai</div>
+        <div style="padding:6px 10px;">azure</div>
+        <div style="padding:6px 10px;">local-llm</div>
+        <div style="padding:6px 10px; color:#94a3b8;">deepseek</div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button class="mock-button" style="flex:1; padding:3px 8px; font-size:11px;">＋ 新增</button>
+        <button class="mock-button" style="flex:1; padding:3px 8px; font-size:11px; color:#b91c1c;">🗑 删除</button>
+      </div>
+    </div>
+
+    <!-- Right: Config + Apply -->
+    <div style="flex:1; display: flex; flex-direction: column; gap: 12px;">
+
+      <!-- Config form -->
+      <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px;">
+        <div style="font-weight: 600; color: #334155; margin-bottom: 10px;">🔗 连接配置</div>
+        <div style="display: grid; grid-template-columns: 70px 1fr 50px; gap: 10px; align-items: center;">
+          <span style="color: #475569;">Base URL</span>
+          <div class="mock-input" style="margin:0; padding:6px 12px; font-size:13px;">https://api.openai.com/v1</div>
+          <div></div>
+          <span style="color: #475569;">Model</span>
+          <div class="mock-input" style="margin:0; padding:6px 12px; font-size:13px;">gpt-5.2-codex</div>
+          <div></div>
+          <span style="color: #475569;">API Key</span>
+          <div class="mock-input" style="margin:0; padding:6px 12px; font-size:13px;">••••••••••••••••</div>
+          <label style="font-size: 12px; color: #64748b;"><input type="checkbox"> 显示</label>
+        </div>
+      </div>
+
+      <!-- Apply bar -->
+      <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #f8fafc; display: flex; align-items: center; gap: 10px;">
+        <span style="font-weight: 600; color: #334155; white-space: nowrap;">🚀 应用</span>
+        <button class="mock-button" style="padding:5px 14px; font-size:13px; background:#e0f2fe; color:#0369a1; font-weight:600;">两端</button>
+        <button class="mock-button" style="padding:5px 14px; font-size:13px;">Win</button>
+        <button class="mock-button" style="padding:5px 14px; font-size:13px;">WSL</button>
+        <span style="flex:1;"></span>
+        <span style="color:#047857; font-size:12px;">✓ 已应用: openai</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>特点</h3>
+  <ul>
+    <li><strong>列表一目了然</strong>：所有供应商可见，点击即切换编辑</li>
+    <li>不依赖下拉框，供应商多时更方便浏览</li>
+    <li>右侧空间利用更充分</li>
+    <li>需要窗口有一定宽度（建议 800px+）</li>
+  </ul>
+</div>

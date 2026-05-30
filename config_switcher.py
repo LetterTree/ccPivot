@@ -220,13 +220,21 @@ class ConfigSwitcher:
             return (None, False)
 
     def _build_managed_claude_env(self, api_key: str, base_url: str, model: str) -> Dict[str, str]:
+        if model.lower().startswith("claude"):
+            haiku_model = "claude-haiku-4-5-20251001"
+            sonnet_model = "claude-sonnet-4-6"
+            opus_model = "claude-opus-4-6"
+        else:
+            haiku_model = model
+            sonnet_model = model
+            opus_model = model
         return {
             'ANTHROPIC_AUTH_TOKEN': api_key,
             'ANTHROPIC_BASE_URL': base_url,
             'ANTHROPIC_MODEL': model,
-            'ANTHROPIC_DEFAULT_HAIKU_MODEL': model,
-            'ANTHROPIC_DEFAULT_SONNET_MODEL': model,
-            'ANTHROPIC_DEFAULT_OPUS_MODEL': model,
+            'ANTHROPIC_DEFAULT_HAIKU_MODEL': haiku_model,
+            'ANTHROPIC_DEFAULT_SONNET_MODEL': sonnet_model,
+            'ANTHROPIC_DEFAULT_OPUS_MODEL': opus_model,
         }
 
     def _merge_claude_env_into_settings(

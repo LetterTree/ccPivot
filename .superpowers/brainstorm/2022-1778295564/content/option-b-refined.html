@@ -1,0 +1,102 @@
+<h2>方案 B 细化 — 左右分栏布局</h2>
+<p class="subtitle">适用于 Codex 和 Claude 两个标签页的统一布局</p>
+
+<div class="split">
+  <!-- Left panel -->
+  <div class="mockup">
+    <div class="mockup-header">左侧: 供应商列表 (固定宽度 220px)</div>
+    <div class="mockup-body" style="font-family:'Microsoft YaHei UI',sans-serif;font-size:13px;color:#1e293b;">
+
+      <div style="font-weight:600;color:#334155;margin-bottom:8px;">📦 供应商列表</div>
+
+      <!-- Listbox style supplier list -->
+      <div style="border:1px solid #cbd5e1;border-radius:6px;background:#fff;margin-bottom:10px;overflow:hidden;">
+        <div style="padding:8px 12px;background:#e0f2fe;color:#0369a1;font-weight:600;border-bottom:1px solid #bae6fd;cursor:pointer;">
+          ● openai
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;">
+          &nbsp;&nbsp;azure
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;">
+          &nbsp;&nbsp;local-llm
+        </div>
+        <div style="padding:8px 12px;color:#94a3b8;cursor:pointer;">
+          &nbsp;&nbsp;deepseek
+        </div>
+      </div>
+
+      <!-- Bottom actions -->
+      <div style="display:flex;gap:8px;">
+        <button class="mock-button" style="flex:1;padding:4px 0;font-size:12px;">＋ 新增</button>
+        <button class="mock-button" style="flex:1;padding:4px 0;font-size:12px;color:#b91c1c;">🗑 删除</button>
+      </div>
+
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;">
+        <div style="font-size:11px;color:#94a3b8;text-align:center;">
+          点击列表项切换供应商<br/>选中项高亮显示
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="mockup">
+    <div class="mockup-header">右侧: 配置面板 (弹性宽度)</div>
+    <div class="mockup-body" style="font-family:'Microsoft YaHei UI',sans-serif;font-size:13px;color:#1e293b;">
+
+      <!-- Section 1: Connection form -->
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:600;color:#334155;margin-bottom:10px;">🔗 连接配置</div>
+
+        <div style="display:grid;grid-template-columns:75px 1fr 50px;gap:10px;align-items:center;">
+          <span style="color:#475569;">Base URL</span>
+          <div class="mock-input" style="margin:0;padding:7px 12px;font-size:13px;">https://api.openai.com/v1</div>
+          <div></div>
+
+          <span style="color:#475569;">Model</span>
+          <div class="mock-input" style="margin:0;padding:7px 12px;font-size:13px;">gpt-5.2-codex</div>
+          <div></div>
+
+          <span style="color:#475569;">API Key</span>
+          <div class="mock-input" style="margin:0;padding:7px 12px;font-size:13px;">••••••••••••••••</div>
+          <label style="font-size:12px;color:#64748b;"><input type="checkbox"> 显示</label>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+          <button class="mock-button" style="padding:4px 12px;font-size:12px;">💾 保存当前输入</button>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid #e2e8f0;margin:14px 0;"></div>
+
+      <!-- Section 2: Apply -->
+      <div>
+        <div style="font-weight:600;color:#334155;margin-bottom:10px;">🚀 应用配置</div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="mock-button" style="padding:6px 18px;font-size:13px;background:#e0f2fe;color:#0369a1;font-weight:600;">Windows + WSL</button>
+          <button class="mock-button" style="padding:6px 18px;font-size:13px;">仅 Windows</button>
+          <button class="mock-button" style="padding:6px 18px;font-size:13px;">仅 WSL</button>
+        </div>
+
+        <div style="margin-top:10px;color:#047857;font-size:12px;">
+          ✓ 当前已应用: openai
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>设计细节</h3>
+  <ul>
+    <li><strong>左侧列表</strong>: 固定 220px 宽度，使用 tk.Listbox 或 Frame 模拟列表，高亮当前选中项</li>
+    <li><strong>右侧面板</strong>: 占据剩余宽度，内部分为"连接配置"和"应用配置"两个区域</li>
+    <li><strong>"保存"按钮</strong>: 移到右侧表单底部，与"应用"按钮分离（保存=存定义，应用=写配置文件）</li>
+    <li><strong>两个标签页</strong>（Codex / Claude）共用同一左右分栏结构</li>
+    <li>窗口建议尺寸: <strong>820 × 460</strong></li>
+  </ul>
+</div>

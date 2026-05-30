@@ -1,0 +1,59 @@
+<h2>方案 A：统一面板 — 三段式纵向流</h2>
+<p class="subtitle">供应商选择 → 连接配置 → 应用操作，从上到下自然流转</p>
+
+<div class="mockup">
+  <div class="mockup-header">Codex 配置 标签页 — 方案 A</div>
+  <div class="mockup-body" style="font-family: 'Microsoft YaHei UI', sans-serif; font-size: 13px; color: #1e293b;">
+
+    <!-- Section 1: Supplier selector -->
+    <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; background: #f8fafc;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-weight: 600; color: #334155; white-space: nowrap;">🔖 供应商</span>
+        <div class="mock-input" style="flex:1; margin:0; padding:6px 12px; font-size:13px; background:#fff;">openai ▾</div>
+        <div style="display: flex; gap: 6px;">
+          <button class="mock-button" style="padding:4px 12px; font-size:12px;">＋ 新增</button>
+          <button class="mock-button" style="padding:4px 12px; font-size:12px;">💾 保存</button>
+          <button class="mock-button" style="padding:4px 12px; font-size:12px; color:#b91c1c;">🗑 删除</button>
+        </div>
+      </div>
+      <div style="color: #047857; font-size: 12px; margin-top: 8px;">✓ 当前已应用: openai</div>
+    </div>
+
+    <!-- Section 2: Connection config -->
+    <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+      <div style="font-weight: 600; color: #334155; margin-bottom: 12px;">🔗 连接配置</div>
+      <div style="display: grid; grid-template-columns: 75px 1fr 50px; gap: 10px; align-items: center;">
+        <span style="color: #475569;">Base URL</span>
+        <div class="mock-input" style="margin:0; padding:6px 12px; font-size:13px;">https://api.openai.com/v1</div>
+        <div></div>
+        <span style="color: #475569;">Model</span>
+        <div class="mock-input" style="margin:0; padding:6px 12px; font-size:13px;">gpt-5.2-codex</div>
+        <div></div>
+        <span style="color: #475569;">API Key</span>
+        <div class="mock-input" style="margin:0; padding:6px 12px; font-size:13px;">••••••••••••••••</div>
+        <label style="font-size: 12px; color: #64748b;"><input type="checkbox"> 显示</label>
+      </div>
+    </div>
+
+    <!-- Section 3: Apply actions -->
+    <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; background: #f8fafc; display: flex; align-items: center; gap: 12px;">
+      <span style="font-weight: 600; color: #334155; white-space: nowrap;">🚀 应用目标</span>
+      <button class="mock-button" style="padding:5px 16px; font-size:13px; background:#e0f2fe; color:#0369a1; font-weight:600;">Windows + WSL</button>
+      <button class="mock-button" style="padding:5px 16px; font-size:13px;">仅 Windows</button>
+      <button class="mock-button" style="padding:5px 16px; font-size:13px;">仅 WSL</button>
+      <span style="flex:1;"></span>
+      <button class="mock-button" style="padding:4px 10px; font-size:12px;">? 帮助</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <h3>特点</h3>
+  <ul>
+    <li><strong>三段清晰分区</strong>：选择 → 配置 → 应用，每段视觉独立</li>
+    <li>所有操作按钮都靠近各自相关的数据</li>
+    <li>每个区域有轻微的背景色区分，层次感强</li>
+    <li>不需要 LabelFrame 边框，视觉更轻盈</li>
+  </ul>
+</div>

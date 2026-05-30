@@ -52,7 +52,7 @@ requires_openai_auth = true     # true→Bearer Auth, false→x-api-key Auth
 }
 ```
 
-程序通过 `_merge_claude_env_into_settings` 做深度合并，只修改 `env.ANTHROPIC_*` 三个字段，不会破坏 settings.json 中的其他配置。
+程序通过 `_merge_claude_env_into_settings` 做深度合并，只修改 `env.ANTHROPIC_*` 字段，不会破坏 settings.json 中的其他配置。
 
 ### 供应商档案存储（`providers.json`）
 

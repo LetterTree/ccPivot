@@ -1,0 +1,65 @@
+<h2>当前布局 (现状)</h2>
+<p class="subtitle">两栏 LabelFrame 垂直堆叠，供应商管理区信息拥挤</p>
+
+<div class="mockup">
+  <div class="mockup-header">Codex 配置 标签页 — 当前结构</div>
+  <div class="mockup-body" style="font-family: 'Microsoft YaHei UI', sans-serif; font-size: 13px; color: #1e293b;">
+
+    <!-- Provider LabelFrame -->
+    <div style="border: 1px solid #d1d5db; border-radius: 6px; padding: 14px 16px; margin-bottom: 14px;">
+      <div style="font-weight: 600; color: #334155; margin-bottom: 10px; font-size: 12px;">📦 Codex 供应商</div>
+
+      <!-- Row: label + dropdown + buttons -->
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+        <span style="white-space: nowrap; color: #475569;">供应商</span>
+        <div class="mock-input" style="flex:1; margin:0; padding:5px 10px; font-size:12px;">openai ▾</div>
+        <div style="display: flex; gap: 6px;">
+          <button class="mock-button" style="padding:3px 10px; font-size:12px;">新增</button>
+          <button class="mock-button" style="padding:3px 10px; font-size:12px;">保存</button>
+          <button class="mock-button" style="padding:3px 10px; font-size:12px; color:#b91c1c;">删除</button>
+          <button class="mock-button" style="padding:3px 8px; font-size:12px;">?</button>
+        </div>
+      </div>
+
+      <!-- Apply buttons — indented -->
+      <div style="margin-bottom: 10px; margin-left: 50px;">
+        <button class="mock-button" style="padding:3px 12px; font-size:12px; margin-right:8px;">应用到两端</button>
+        <button class="mock-button" style="padding:3px 12px; font-size:12px; margin-right:8px;">仅 Windows</button>
+        <button class="mock-button" style="padding:3px 12px; font-size:12px;">仅 WSL</button>
+      </div>
+
+      <!-- Applied label -->
+      <div style="color: #047857; font-size: 12px;">✓ 当前已应用: openai</div>
+    </div>
+
+    <!-- Config form LabelFrame -->
+    <div style="border: 1px solid #d1d5db; border-radius: 6px; padding: 14px 16px;">
+      <div style="font-weight: 600; color: #334155; margin-bottom: 10px; font-size: 12px;">🔗 连接配置</div>
+
+      <div style="display: grid; grid-template-columns: 70px 1fr 50px; gap: 9px; align-items: center;">
+        <span style="color: #475569;">Base URL</span>
+        <div class="mock-input" style="margin:0; padding:5px 10px; font-size:12px;">https://api.openai.com/v1</div>
+        <div></div>
+
+        <span style="color: #475569;">Model</span>
+        <div class="mock-input" style="margin:0; padding:5px 10px; font-size:12px;">gpt-5.2-codex</div>
+        <div></div>
+
+        <span style="color: #475569;">API Key</span>
+        <div class="mock-input" style="margin:0; padding:5px 10px; font-size:12px;">••••••••••••••••</div>
+        <label style="font-size: 11px; color: #64748b;"><input type="checkbox"> 显示</label>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <h3>当前问题</h3>
+  <ul>
+    <li><strong>供应商管理区</strong>同时容纳了下拉框、CRUD按钮、应用按钮、状态标签，信息密度过高</li>
+    <li><strong>应用按钮</strong>（应用到两端/仅Windows/仅WSL）位置尴尬，缩进在 dropdown 下方显得不协调</li>
+    <li>两个 LabelFrame 缺乏视觉节奏感，仅上下堆叠</li>
+    <li>右侧大片空白未利用</li>
+  </ul>
+</div>

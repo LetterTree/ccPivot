@@ -1,0 +1,130 @@
+<h2>最终设计 — 左右分栏布局（定稿）</h2>
+<p class="subtitle">展示完整交互状态：选中、已应用标记、悬停提示</p>
+
+<div class="split">
+  <!-- Left panel -->
+  <div class="mockup">
+    <div class="mockup-header">左侧 — 供应商列表</div>
+    <div class="mockup-body" style="font-family:'Microsoft YaHei UI',sans-serif;font-size:13px;color:#1e293b;">
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-weight:600;color:#334155;">📦 供应商</span>
+        <span style="font-size:11px;color:#94a3b8;">4 个</span>
+      </div>
+
+      <!-- List -->
+      <div style="border:1px solid #cbd5e1;border-radius:6px;background:#fff;margin-bottom:10px;overflow:hidden;">
+        <!-- Selected + Applied -->
+        <div style="padding:9px 12px;background:#e0f2fe;border-bottom:1px solid #bae6fd;display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <span style="color:#0369a1;font-weight:600;flex:1;">openai</span>
+          <span style="font-size:10px;color:#047857;background:#dcfce7;padding:1px 6px;border-radius:3px;">已应用</span>
+          <span style="font-size:10px;color:#0369a1;">▶</span>
+        </div>
+        <!-- Normal -->
+        <div style="padding:9px 12px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;cursor:pointer;background:#fff;">
+          <span style="flex:1;">azure</span>
+          <span style="font-size:10px;color:#94a3b8;background:#f1f5f9;padding:1px 6px;border-radius:3px;">已应用</span>
+        </div>
+        <!-- Normal -->
+        <div style="padding:9px 12px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;cursor:pointer;background:#fff;">
+          <span style="flex:1;">local-llm</span>
+        </div>
+        <!-- Normal, no marker -->
+        <div style="padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;background:#fff;">
+          <span style="flex:1;color:#94a3b8;">deepseek</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;">
+        <button class="mock-button" style="flex:1;padding:5px 0;font-size:12px;">＋ 新增</button>
+        <button class="mock-button" style="flex:1;padding:5px 0;font-size:12px;color:#b91c1c;">🗑 删除</button>
+      </div>
+
+      <div style="margin-top:12px;text-align:center;font-size:11px;color:#94a3b8;">
+        ▸ 点击切换供应商<br/>▸ 「已应用」标记当前生效的供应商
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="mockup">
+    <div class="mockup-header">右侧 — 配置面板</div>
+    <div class="mockup-body" style="font-family:'Microsoft YaHei UI',sans-serif;font-size:13px;color:#1e293b;">
+
+      <!-- Section 1: Connection -->
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:600;color:#334155;margin-bottom:12px;">🔗 连接配置</div>
+
+        <div style="display:grid;grid-template-columns:75px 1fr 50px;gap:10px;align-items:center;">
+          <span style="color:#475569;">Base URL</span>
+          <div class="mock-input" style="margin:0;padding:7px 12px;font-size:13px;">https://api.openai.com/v1</div>
+          <div></div>
+
+          <span style="color:#475569;">Model</span>
+          <div class="mock-input" style="margin:0;padding:7px 12px;font-size:13px;">gpt-5.2-codex</div>
+          <div></div>
+
+          <span style="color:#475569;">API Key</span>
+          <div class="mock-input" style="margin:0;padding:7px 12px;font-size:13px;">••••••••••••••••</div>
+          <label style="font-size:12px;color:#64748b;"><input type="checkbox" checked> 显示</label>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;gap:8px;">
+          <button class="mock-button" style="padding:5px 14px;font-size:12px;">? 帮助</button>
+          <button class="mock-button" style="padding:5px 16px;font-size:12px;font-weight:600;">💾 保存</button>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid #e2e8f0;margin:16px 0;"></div>
+
+      <!-- Section 2: Apply -->
+      <div>
+        <div style="font-weight:600;color:#334155;margin-bottom:12px;">🚀 同步到配置文件</div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="mock-button" style="padding:7px 20px;font-size:13px;background:#e0f2fe;color:#0369a1;font-weight:600;">两端同步</button>
+          <button class="mock-button" style="padding:7px 20px;font-size:13px;">仅 Windows</button>
+          <button class="mock-button" style="padding:7px 20px;font-size:13px;">仅 WSL</button>
+        </div>
+
+        <div style="margin-top:12px;color:#047857;font-size:12px;">
+          ✓ 当前已同步: openai (两端)
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;">
+  <h3>交互规则</h3>
+  <table style="width:100%;border-collapse:collapse;">
+    <tr style="border-bottom:1px solid #e2e8f0;">
+      <th style="text-align:left;padding:8px 0;color:#475569;">操作</th>
+      <th style="text-align:left;padding:8px 0;color:#475569;">行为</th>
+    </tr>
+    <tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:8px 0;">点击左侧列表项</td>
+      <td style="padding:8px 0;">右侧表单加载该供应商的 Base URL / Model / API Key</td>
+    </tr>
+    <tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:8px 0;">点击「保存」</td>
+      <td style="padding:8px 0;">将右侧当前输入存入该供应商定义（更新 model_providers）</td>
+    </tr>
+    <tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:8px 0;">点击「两端同步」</td>
+      <td style="padding:8px 0;">先保存当前输入，再写入 config.toml + auth.json 并同步 WSL</td>
+    </tr>
+    <tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:8px 0;">点击「仅 Windows / 仅 WSL」</td>
+      <td style="padding:8px 0;">同上，但只同步到指定侧</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;">左侧「已应用」标记</td>
+      <td style="padding:8px 0;">所有已保存的供应商都会显示；当前激活的供应商高亮为蓝色</td>
+    </tr>
+  </table>
+</div>

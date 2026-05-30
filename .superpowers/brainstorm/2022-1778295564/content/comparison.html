@@ -1,0 +1,119 @@
+<h2>选择你偏好的布局方案</h2>
+<p class="subtitle">以下三个方案各有侧重，选一个方向后我可以继续细化</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding: 20px; background:#f8fafc; border-radius:6px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;">
+            <span style="font-weight:600;font-size:12px;">📦 供应商</span>
+            <div style="flex:1;border:1px solid #d1d5db;border-radius:4px;padding:4px 8px;font-size:11px;">openai ▾</div>
+            <div style="display:flex;gap:4px;">
+              <span style="background:#e2e8f0;padding:2px 6px;border-radius:3px;font-size:10px;">+</span>
+              <span style="background:#e2e8f0;padding:2px 6px;border-radius:3px;font-size:10px;">💾</span>
+              <span style="background:#e2e8f0;padding:2px 6px;border-radius:3px;font-size:10px;">🗑</span>
+            </div>
+          </div>
+          <div style="padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+            🔗 连接配置<br/>
+            Base URL [................]<br/>
+            Model &nbsp;&nbsp;&nbsp;&nbsp;[................]<br/>
+            API Key &nbsp;[................] □显示
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;">
+            <span style="font-weight:600;font-size:12px;">🚀</span>
+            <span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;">两端</span>
+            <span style="background:#e2e8f0;padding:3px 10px;border-radius:4px;font-size:11px;">Win</span>
+            <span style="background:#e2e8f0;padding:3px 10px;border-radius:4px;font-size:11px;">WSL</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 A — 三段式纵向流</h3>
+      <p>供应商选择、连接配置、应用操作三个分区从上到下排列，每区独立，视觉层次清晰。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>三段节奏清晰</li><li>改动量小</li><li>适合窄窗口</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Dropdown 选供应商，不可见全部</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding: 20px; background:#f8fafc; border-radius:6px; display:flex; gap:12px;">
+        <div style="width:130px;border:1px solid #e2e8f0;border-radius:6px;padding:10px;background:#fff;">
+          <div style="font-weight:600;font-size:11px;margin-bottom:6px;">📦 供应商列表</div>
+          <div style="border:1px solid #d1d5db;border-radius:4px;font-size:10px;">
+            <div style="padding:4px 8px;background:#e0f2fe;color:#0369a1;">● openai</div>
+            <div style="padding:4px 8px;">azure</div>
+            <div style="padding:4px 8px;">local-llm</div>
+            <div style="padding:4px 8px;">deepseek</div>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:6px;">
+            <span style="background:#e2e8f0;padding:2px 4px;border-radius:3px;font-size:9px;">+ 新增</span>
+            <span style="background:#e2e8f0;padding:2px 4px;border-radius:3px;font-size:9px;">🗑 删除</span>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+          <div style="padding:8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;font-size:11px;">
+            🔗 Base URL [..........]<br/>Model [..........]<br/>API Key [..........] □显示
+          </div>
+          <div style="padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;display:flex;align-items:center;gap:6px;font-size:11px;">
+            🚀
+            <span style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:3px;font-weight:600;">两端</span>
+            <span style="background:#e2e8f0;padding:2px 8px;border-radius:3px;">Win</span>
+            <span style="background:#e2e8f0;padding:2px 8px;border-radius:3px;">WSL</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 B — 左右分栏</h3>
+      <p>左侧列表显示所有供应商，右侧为配置表单 + 应用按钮区域。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>供应商一览无余</li><li>专业感强</li><li>空间利用好</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>需要 800px+ 宽度</li><li>改动量较大</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding: 20px; background:#f8fafc; border-radius:6px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;">
+            <span style="font-weight:600;font-size:12px;">📦 供应商</span>
+            <div style="flex:1;border:1px solid #d1d5db;border-radius:4px;padding:5px 10px;font-size:11px;">openai ▾</div>
+            <span style="font-size:11px;color:#047857;">✓ 已应用</span>
+            <span style="background:#e2e8f0;padding:3px 8px;border-radius:3px;font-size:10px;">+</span>
+            <span style="background:#e2e8f0;padding:3px 8px;border-radius:3px;font-size:10px;">💾</span>
+            <span style="background:#e2e8f0;padding:3px 8px;border-radius:3px;font-size:10px;color:#b91c1c;">🗑</span>
+          </div>
+          <div style="padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;">
+            <div style="display:grid;grid-template-columns:70px 1fr 50px;gap:8px;align-items:center;font-size:11px;">
+              <span>Base URL</span><div style="border:1px solid #d1d5db;border-radius:3px;padding:4px 8px;"></div><div></div>
+              <span>Model</span><div style="border:1px solid #d1d5db;border-radius:3px;padding:4px 8px;"></div><div></div>
+              <span>API Key</span><div style="border:1px solid #d1d5db;border-radius:3px;padding:4px 8px;">••••••••</div><span>□ 显示</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;">
+            <span style="font-weight:600;font-size:12px;">🚀</span>
+            <span style="background:#e0f2fe;color:#0369a1;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;">应用到两端</span>
+            <span style="background:#e2e8f0;padding:4px 12px;border-radius:4px;font-size:11px;">仅 Windows</span>
+            <span style="background:#e2e8f0;padding:4px 12px;border-radius:4px;font-size:11px;">仅 WSL</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 C — 单面板紧凑流（推荐）</h3>
+      <p>合并供应商管理和连接配置为一个大面板，所有内容在同一视觉组内，去除 LabelFrame 边框。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>视觉一体化，最简洁</li><li>供应商行右侧显示状态</li><li>改动量最小</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>三个分区边界感较弱</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
